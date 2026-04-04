@@ -1,0 +1,6 @@
+name = "mikumod-proxy"
+main = "index.ts"
+compatibility_date = "2024-12-01"
+
+[vars]
+PROXY_SECRET = "REDACTED"

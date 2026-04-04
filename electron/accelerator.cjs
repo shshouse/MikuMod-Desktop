@@ -25,6 +25,31 @@ const CA_KEY_FILE = 'mikumod_ca_key.pem'
 const CA_COMMON_NAME = 'MikuMod Accelerator CA'
 const PROXY_PORT = 443
 
+// Worker 中转配置（用于 Fastly CDN + GFW SNI 双重封锁的域名）
+// 部署后替换为你的 Worker 域名和密钥
+const WORKER_RELAY_URL = 'https://proxy.yourdomain.com' // TODO: 替换为你的 Worker 域名
+const WORKER_SECRET = 'REDACTED'
+
+// 需要走 Worker 中转的域名（Fastly CDN + GFW SNI 过滤）
+const WORKER_RELAY_DOMAINS = new Set([
+  'github.com', 'github.dev', 'api.github.com', 'github.githubassets.com',
+  'education.github.com', 'resources.github.com', 'uploads.github.com',
+  'archiveprogram.github.com', 'raw.githubusercontent.com', 'avatars.githubusercontent.com',
+  'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
+  'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
+  'alive.github.com',
+  'twitch.tv', 'www.twitch.tv', 'api.twitch.tv', 'ttvnw.net',
+  'www.recaptcha.net', 'fonts.googleapis.com', 'fonts.gstatic.com',
+])
+
+function needsWorkerRelay(domain) {
+  if (WORKER_RELAY_DOMAINS.has(domain)) return true
+  for (const d of WORKER_RELAY_DOMAINS) {
+    if (domain.endsWith('.' + d)) return true
+  }
+  return false
+}
+
 let acceleratorState = {
   running: false,
   domains: [],
@@ -373,6 +398,11 @@ function createProxyServer() {
  * 不发 SNI 绕过 GFW，用 Host header 让目标服务器正确路由
  */
 function forwardRequest(clientReq, clientRes, domain, realIP) {
+  // 判断是否需要走 Worker 中转
+  if (needsWorkerRelay(domain)) {
+    return forwardViaWorker(clientReq, clientRes, domain)
+  }
+
   const options = {
     hostname: realIP,
     port: 443,
@@ -417,6 +447,52 @@ function forwardRequest(clientReq, clientRes, domain, realIP) {
   })
 
   // 流式转发请求体
+  clientReq.pipe(proxyReq)
+}
+
+/**
+ * 通过 Cloudflare Worker 中转请求
+ * 用于 Fastly CDN + GFW SNI 双重封锁的域名（GitHub、Twitch 等）
+ */
+function forwardViaWorker(clientReq, clientRes, domain) {
+  const workerUrl = new URL(clientReq.url, WORKER_RELAY_URL)
+
+  const headers = { ...clientReq.headers }
+  headers['host'] = new URL(WORKER_RELAY_URL).host
+  headers['x-proxy-host'] = domain
+  headers['x-proxy-secret'] = WORKER_SECRET
+  delete headers['accept-encoding']
+
+  const proxyReq = https.request(workerUrl.href, {
+    method: clientReq.method,
+    headers,
+    timeout: 30000,
+    agent: acceleratorState.keepAliveAgent,
+  }, (proxyRes) => {
+    // 清理 Worker 附加的 CORS 头（浏览器不需要，这是本地代理）
+    const resHeaders = { ...proxyRes.headers }
+    delete resHeaders['access-control-allow-origin']
+    clientRes.writeHead(proxyRes.statusCode, resHeaders)
+    proxyRes.pipe(clientRes)
+  })
+
+  proxyReq.on('error', (err) => {
+    console.error(`[Accelerator] Worker relay error for ${domain}: ${err.message}`)
+    if (!clientRes.headersSent) {
+      clientRes.writeHead(502)
+      clientRes.end(`Worker relay failed: ${err.message}`)
+    }
+  })
+
+  proxyReq.on('timeout', () => {
+    console.error(`[Accelerator] Worker relay timeout for ${domain}`)
+    proxyReq.destroy()
+    if (!clientRes.headersSent) {
+      clientRes.writeHead(504)
+      clientRes.end('Worker Relay Timeout')
+    }
+  })
+
   clientReq.pipe(proxyReq)
 }
 
