@@ -30,6 +30,7 @@ let acceleratorState = {
   domains: [],
   resolved: {},
   proxyServer: null,
+  keepAliveAgent: null, // 长连接复用 Agent
   certCache: {},
   caKey: null,
   caCert: null,
@@ -285,6 +286,13 @@ function removeHosts() {
 function createProxyServer() {
   const defaultCert = generateDomainCert('localhost')
 
+  // 开启 Keep-Alive 连接池，大幅提升并发加载速度（如多图网页）
+  acceleratorState.keepAliveAgent = new https.Agent({
+    keepAlive: true,
+    maxSockets: Infinity,
+    timeout: 60000,
+  })
+
   // 使用 https.createServer 同时做 TLS 终止 + HTTP 解析
   const server = https.createServer({
     key: defaultCert.key,
@@ -316,9 +324,45 @@ function createProxyServer() {
     console.error('[Accelerator] Server error:', err.message)
   })
 
-  // 处理 CONNECT 隧道（某些客户端可能发 CONNECT）
-  server.on('connect', (req, clientSocket) => {
-    clientSocket.end('HTTP/1.1 405 Method Not Allowed\r\n\r\n')
+  // 处理 WebSocket
+  server.on('upgrade', (req, clientSocket, head) => {
+    const domain = req.headers.host?.split(':')[0] || 'unknown'
+    const realIP = acceleratorState.resolved[domain]
+
+    if (!realIP) {
+      clientSocket.destroy()
+      return
+    }
+
+    // 建立到上游的 TLS 隧道（WebSocket 透明转发）
+    const upstreamSocket = tls.connect({
+      host: realIP,
+      port: 443,
+      servername: '', // 同样不发 SNI
+      rejectUnauthorized: false,
+    }, () => {
+      // 构建原始请求握手头转给服务端
+      let requestHeader = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`
+      for(let i=0; i<req.rawHeaders.length; i+=2){
+        requestHeader += `${req.rawHeaders[i]}: ${req.rawHeaders[i+1]}\r\n`
+      }
+      requestHeader += '\r\n'
+      
+      upstreamSocket.write(requestHeader)
+      if (head && head.length) upstreamSocket.write(head)
+      
+      // 双向管道接通
+      clientSocket.pipe(upstreamSocket)
+      upstreamSocket.pipe(clientSocket)
+    })
+
+    upstreamSocket.on('error', () => {
+      clientSocket.destroy()
+      upstreamSocket.destroy()
+    })
+    clientSocket.on('error', () => {
+      upstreamSocket.destroy()
+    })
   })
 
   return server
@@ -339,8 +383,8 @@ function forwardRequest(clientReq, clientRes, domain, realIP) {
     servername: '',
     rejectUnauthorized: false,
     timeout: 30000,
-    // 强制 HTTP/1.1
-    agent: false,
+    // 使用保持连接池的 Agent，提速
+    agent: acceleratorState.keepAliveAgent,
   }
 
   // 确保 Host header 是原始域名（让目标服务器正确路由）
@@ -391,7 +435,7 @@ function retryWithSNI(clientReq, clientRes, domain, realIP) {
     servername: domain, // 带 SNI 重试
     rejectUnauthorized: false,
     timeout: 30000,
-    agent: false,
+    agent: acceleratorState.keepAliveAgent,
   }
   options.headers.host = domain
   delete options.headers['accept-encoding']
@@ -580,6 +624,10 @@ function registerAcceleratorIPC() {
       acceleratorState.proxyServer.close()
       acceleratorState.proxyServer = null
     }
+    if (acceleratorState.keepAliveAgent) {
+      acceleratorState.keepAliveAgent.destroy()
+      acceleratorState.keepAliveAgent = null
+    }
     // 2. 清除 hosts
     const result = removeHosts()
     if (result.success) {
@@ -607,6 +655,10 @@ function cleanupOnExit() {
   if (acceleratorState.proxyServer) {
     acceleratorState.proxyServer.close()
     acceleratorState.proxyServer = null
+  }
+  if (acceleratorState.keepAliveAgent) {
+    acceleratorState.keepAliveAgent.destroy()
+    acceleratorState.keepAliveAgent = null
   }
   if (acceleratorState.running) {
     try {

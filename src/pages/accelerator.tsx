@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { DEFAULT_DOMAINS } from "@/lib/accelerate-domains"
 import {
   Zap, ZapOff, RefreshCw, CheckCircle2, XCircle,
   Loader2, Shield, ChevronDown, ChevronRight, Check, Minus, Globe
@@ -49,12 +49,12 @@ const GROUP_BRAND_ICONS: Record<string, string> = {
 
 const GROUP_ORDER = [
   "steam",
+  "github",
   "twitch",
   "origin",
   "uplay",
   "public_cdn",
   "captcha",
-  "github",
   "nexusmods",
   "docker",
   "greasyfork",
@@ -80,80 +80,30 @@ export function AcceleratorPage() {
     setLoading(true)
     setError(null)
     try {
-      const { data, error: fetchErr } = await supabase
-        .from("accelerate_domains")
-        .select("*")
-        .eq("enabled", true)
-        .order("group_name")
-        .order("sort_order")
+      const data = DEFAULT_DOMAINS as AccelerateDomain[]
+      setDomains(data)
+      await window.electronAPI?.acceleratorSetDomains(data)
 
-      if (fetchErr) throw fetchErr
+      let savedChecked: Record<string, boolean> | null = null
+      try {
+        const cache = localStorage.getItem('mmd_accelerator_checked')
+        if (cache) savedChecked = JSON.parse(cache)
+      } catch {}
 
-      if (data && data.length > 0) {
-        setDomains(data)
-        await window.electronAPI?.acceleratorSetDomains(data)
-
-        let savedChecked: Record<string, boolean> | null = null
-        try {
-          const cache = localStorage.getItem('mmd_accelerator_checked')
-          if (cache) savedChecked = JSON.parse(cache)
-        } catch {}
-
-        if (savedChecked && Object.keys(savedChecked).length > 0) {
-          setCheckedItems(savedChecked)
-        } else {
-          // 默认全选 github 和 steam
-          const defaultChecked: Record<string, boolean> = {}
-          data.forEach((d: AccelerateDomain) => {
-            defaultChecked[d.id] = d.group_name === "github" || d.group_name === "steam"
-          })
-          setCheckedItems(defaultChecked)
-          localStorage.setItem('mmd_accelerator_checked', JSON.stringify(defaultChecked))
-        }
-        setSelectedGroup("steam")
+      if (savedChecked && Object.keys(savedChecked).length > 0) {
+        setCheckedItems(savedChecked)
       } else {
-        const cached = await window.electronAPI?.acceleratorGetDomains()
-        if (cached?.length) {
-          const items = cached as AccelerateDomain[]
-          setDomains(items)
-          
-          let savedChecked: Record<string, boolean> | null = null
-          try {
-            const cacheStr = localStorage.getItem('mmd_accelerator_checked')
-            if (cacheStr) savedChecked = JSON.parse(cacheStr)
-          } catch {}
-
-          if (savedChecked && Object.keys(savedChecked).length > 0) {
-            setCheckedItems(savedChecked)
-          } else {
-            const defaultChecked: Record<string, boolean> = {}
-            items.forEach((d) => { defaultChecked[d.id] = true })
-            setCheckedItems(defaultChecked)
-          }
-        }
+        // 默认全选 github 和 steam
+        const defaultChecked: Record<string, boolean> = {}
+        data.forEach((d: AccelerateDomain) => {
+          defaultChecked[d.id] = d.group_name === "github" || d.group_name === "steam"
+        })
+        setCheckedItems(defaultChecked)
+        localStorage.setItem('mmd_accelerator_checked', JSON.stringify(defaultChecked))
       }
-    } catch {
-      const cached = await window.electronAPI?.acceleratorGetDomains()
-      if (cached?.length) {
-        const items = cached as AccelerateDomain[]
-        setDomains(items)
-        
-        let savedChecked: Record<string, boolean> | null = null
-        try {
-          const cacheStr = localStorage.getItem('mmd_accelerator_checked')
-          if (cacheStr) savedChecked = JSON.parse(cacheStr)
-        } catch {}
-
-        if (savedChecked && Object.keys(savedChecked).length > 0) {
-          setCheckedItems(savedChecked)
-        } else {
-          const defaultChecked: Record<string, boolean> = {}
-          items.forEach((d) => { defaultChecked[d.id] = true })
-          setCheckedItems(defaultChecked)
-        }
-      } else {
-        setError("无法获取加速配置，请检查网络")
-      }
+      setSelectedGroup("steam")
+    } catch (e) {
+      setError("配置初始化失败：" + (e as Error).message)
     } finally {
       setLoading(false)
     }
@@ -581,7 +531,7 @@ export function AcceleratorPage() {
       {/* 底栏说明 */}
       <div className="shrink-0 px-6 py-2.5 border-t border-zinc-700/30 bg-zinc-900/50">
         <p className="text-[11px] text-zinc-600">
-          通过 DoH 解析获取域名真实 IP，写入系统 hosts 文件绕过 DNS 污染。启动需管理员权限。不使用任何代理服务器，所有流量直连。
+          基于本地特权 HTTPS 代理与 SNI 伪装无缝绕过深度连接阻断。不会干扰系统全局网络，不产生安全污染。
         </p>
       </div>
     </div>
