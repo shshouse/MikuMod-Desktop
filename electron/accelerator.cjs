@@ -27,7 +27,7 @@ const PROXY_PORT = 443
 
 // Worker 中转配置（用于 Fastly CDN + GFW SNI 双重封锁的域名）
 // 部署后替换为你的 Worker 域名和密钥
-const WORKER_RELAY_URL = 'https://proxy.yourdomain.com' // TODO: 替换为你的 Worker 域名
+const WORKER_RELAY_URL = 'https://relay.invalid'
 const WORKER_SECRET = 'REDACTED'
 
 // 需要走 Worker 中转的域名（Fastly CDN + GFW SNI 过滤）
