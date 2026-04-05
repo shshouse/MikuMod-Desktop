@@ -454,6 +454,13 @@ function forwardRequest(clientReq, clientRes, domain, realIP) {
  * 通过 Cloudflare Worker 中转请求
  * 用于 Fastly CDN + GFW SNI 双重封锁的域名（GitHub、Twitch 等）
  */
+const workerAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 32,         // Worker 并发连接数
+  maxFreeSockets: 8,
+})
+
 function forwardViaWorker(clientReq, clientRes, domain) {
   const workerUrl = new URL(clientReq.url, WORKER_RELAY_URL)
 
@@ -461,17 +468,19 @@ function forwardViaWorker(clientReq, clientRes, domain) {
   headers['host'] = new URL(WORKER_RELAY_URL).host
   headers['x-proxy-host'] = domain
   headers['x-proxy-secret'] = WORKER_SECRET
-  delete headers['accept-encoding']
+  // 保留 accept-encoding，让 Worker 返回压缩数据直接透传给浏览器
+  // 浏览器本身能解压 gzip/br，无需本地代理处理
 
   const proxyReq = https.request(workerUrl.href, {
     method: clientReq.method,
     headers,
     timeout: 30000,
-    agent: acceleratorState.keepAliveAgent,
+    agent: workerAgent,
   }, (proxyRes) => {
-    // 清理 Worker 附加的 CORS 头（浏览器不需要，这是本地代理）
     const resHeaders = { ...proxyRes.headers }
     delete resHeaders['access-control-allow-origin']
+    delete resHeaders['x-cache'] // 调试用，生产环境不透传
+
     clientRes.writeHead(proxyRes.statusCode, resHeaders)
     proxyRes.pipe(clientRes)
   })

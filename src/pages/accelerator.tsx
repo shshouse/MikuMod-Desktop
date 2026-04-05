@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState, useMemo } from "react"
 import { DEFAULT_DOMAINS } from "@/lib/accelerate-domains"
 import {
   Zap, ZapOff, RefreshCw, CheckCircle2, XCircle,
@@ -37,14 +37,14 @@ const GROUP_LABELS: Record<string, string> = {
 }
 
 const GROUP_BRAND_ICONS: Record<string, string> = {
-  steam: "https://cdn.simpleicons.org/steam/66c0f4",     // Steam 经典亮蓝
-  twitch: "https://cdn.simpleicons.org/twitch/a970ff",   // Twitch 亮紫色
-  origin: "https://cdn.simpleicons.org/origin/f56c2d",   // Origin 橙色
-  uplay: "https://cdn.simpleicons.org/ubisoft/00b4ff",   // Ubisoft 蓝色
-  github: "https://cdn.simpleicons.org/github/ffffff",   // 夜间模式下 Github 保持纯白最清晰
-  docker: "https://cdn.simpleicons.org/docker/2496ed",   // Docker 蓝
-  greasyfork: "https://cdn.simpleicons.org/greasyfork/e31c25", // 红色
-  fandom: "https://cdn.simpleicons.org/fandom/00d6d6",   // Fandom 青色
+  steam: "https://cdn.simpleicons.org/steam/66c0f4",
+  twitch: "https://cdn.simpleicons.org/twitch/a970ff",
+  origin: "https://cdn.simpleicons.org/origin/f56c2d",
+  uplay: "https://cdn.simpleicons.org/ubisoft/00b4ff",
+  github: "https://cdn.simpleicons.org/github/ffffff",
+  docker: "https://cdn.simpleicons.org/docker/2496ed",
+  greasyfork: "https://cdn.simpleicons.org/greasyfork/e31c25",
+  fandom: "https://cdn.simpleicons.org/fandom/00d6d6",
 }
 
 const GROUP_ORDER = [
@@ -61,6 +61,13 @@ const GROUP_ORDER = [
   "fandom",
 ]
 
+// 提取辅助函数以避免每次渲染时重建
+const getRootItems = (groupDomains: AccelerateDomain[]) =>
+  groupDomains.filter(d => !d.parent_id)
+
+const getChildren = (parentId: string, groupDomains: AccelerateDomain[]) =>
+  groupDomains.filter(d => d.parent_id === parentId)
+
 export function AcceleratorPage() {
   const [domains, setDomains] = useState<AccelerateDomain[]>([])
   const [resolved, setResolved] = useState<ResolvedMap>({})
@@ -69,13 +76,12 @@ export function AcceleratorPage() {
   const [starting, setStarting] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // 记录每个域名的勾选状态（id -> boolean）
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({})
   const [latencies, setLatencies] = useState<Record<string, { before: number | null; after: number | null } | null>>({})
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [hasResidual, setHasResidual] = useState(false)
 
-  // 初始化
+  // 1. 初始化
   const fetchDomains = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -87,15 +93,22 @@ export function AcceleratorPage() {
       let savedChecked: Record<string, boolean> | null = null
       try {
         const cache = localStorage.getItem('mmd_accelerator_checked')
-        if (cache) savedChecked = JSON.parse(cache)
-      } catch {}
+        if (cache) {
+          const parsed = JSON.parse(cache)
+          // 加强类型防御
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+            savedChecked = parsed
+          }
+        }
+      } catch (err) {
+        console.warn("解析本地缓存失败，回退到默认设置", err)
+      }
 
-      if (savedChecked && Object.keys(savedChecked).length > 0) {
+      if (savedChecked) {
         setCheckedItems(savedChecked)
       } else {
-        // 默认全选 github 和 steam
         const defaultChecked: Record<string, boolean> = {}
-        data.forEach((d: AccelerateDomain) => {
+        data.forEach((d) => {
           defaultChecked[d.id] = d.group_name === "github" || d.group_name === "steam"
         })
         setCheckedItems(defaultChecked)
@@ -109,106 +122,117 @@ export function AcceleratorPage() {
     }
   }, [])
 
+  // 2. 状态获取，增加 .catch 捕获异常
   useEffect(() => {
     fetchDomains()
-    window.electronAPI?.acceleratorCheckHosts().then((has: boolean) => {
-      setHasResidual(has)
-      if (has) setRunning(true)
-    })
-    window.electronAPI?.acceleratorStatus().then((s: { running: boolean; resolved: ResolvedMap }) => {
-      if (s) {
-        setRunning(s.running)
-        setResolved(s.resolved || {})
+    
+    // 捕获异步异常
+    const checkStatus = async () => {
+      try {
+        const has = await window.electronAPI?.acceleratorCheckHosts()
+        if (has !== undefined) {
+          setHasResidual(has)
+          if (has) setRunning(true)
+        }
+        
+        const s = await window.electronAPI?.acceleratorStatus()
+        if (s) {
+          setRunning(s.running)
+          setResolved(s.resolved || {})
+        }
+      } catch (err) {
+        console.error("无法获取加速器状态:", err)
       }
-    })
+    }
+    
+    checkStatus()
   }, [fetchDomains])
 
-  // 按分组整理
-  const groups = domains.reduce<Record<string, AccelerateDomain[]>>((acc, d) => {
-    if (!acc[d.group_name]) acc[d.group_name] = []
-    acc[d.group_name].push(d)
-    return acc
-  }, {})
+  // 3. 性能优化：缓存高开销分组操作
+  const { groups, sortedGroupNames } = useMemo(() => {
+    const accGroups = domains.reduce<Record<string, AccelerateDomain[]>>((acc, d) => {
+      if (!acc[d.group_name]) acc[d.group_name] = []
+      acc[d.group_name].push(d)
+      return acc
+    }, {})
+    const sortedNames = GROUP_ORDER.filter(g => accGroups[g])
+    return { groups: accGroups, sortedGroupNames: sortedNames }
+  }, [domains])
 
-  const sortedGroupNames = GROUP_ORDER.filter(g => groups[g])
-
-  // 获取分组内的根项（无 parent_id 的）和子项
-  const getRootItems = (groupDomains: AccelerateDomain[]) =>
-    groupDomains.filter(d => !d.parent_id)
-  const getChildren = (parentId: string, groupDomains: AccelerateDomain[]) =>
-    groupDomains.filter(d => d.parent_id === parentId)
-
-  // 分组勾选状态：全选 / 部分选 / 未选
-  const getGroupCheckState = (groupName: string): "all" | "partial" | "none" => {
+  const getGroupCheckState = useCallback((groupName: string): "all" | "partial" | "none" => {
     const items = groups[groupName] || []
+    if (items.length === 0) return "none"
     const checked = items.filter(d => checkedItems[d.id])
     if (checked.length === 0) return "none"
     if (checked.length === items.length) return "all"
     return "partial"
-  }
+  }, [groups, checkedItems])
 
-  // 统一更新状态和缓存
-  const updateCheckedItems = (next: Record<string, boolean>) => {
+  const updateCheckedItems = useCallback((next: Record<string, boolean>) => {
     setCheckedItems(next)
     localStorage.setItem('mmd_accelerator_checked', JSON.stringify(next))
-  }
+  }, [])
 
-  // 切换整个分组
-  const toggleGroupCheck = (groupName: string) => {
+  const toggleGroupCheck = useCallback((groupName: string) => {
     const items = groups[groupName] || []
     const state = getGroupCheckState(groupName)
     const next = { ...checkedItems }
     const newVal = state !== "all"
     items.forEach(d => { next[d.id] = newVal })
     updateCheckedItems(next)
-  }
+  }, [groups, checkedItems, getGroupCheckState, updateCheckedItems])
 
-  // 切换单个项目（含级联子项）
-  const toggleItem = (item: AccelerateDomain) => {
+  const toggleItem = useCallback((item: AccelerateDomain) => {
     const next = { ...checkedItems }
     const newVal = !next[item.id]
     next[item.id] = newVal
+    
     // 级联子项
     const children = getChildren(item.id, domains)
     children.forEach(c => { next[c.id] = newVal })
-    // 如果是子项，检查父级状态
+    
+    // 修复子节点改动影响父节点的逻辑：部分选定或未选定一律将父节点设为false
     if (item.parent_id) {
       const siblings = getChildren(item.parent_id, domains)
-      const allChecked = siblings.every(s => s.id === item.id ? newVal : next[s.id])
-      const noneChecked = siblings.every(s => s.id === item.id ? !newVal : !next[s.id])
-      // 保持父级与子项同步
-      if (noneChecked) next[item.parent_id] = false
-      else if (allChecked) next[item.parent_id] = true
+      const allSiblingsChecked = siblings.every(s => s.id === item.id ? newVal : next[s.id])
+      next[item.parent_id] = allSiblingsChecked
     }
+    
     updateCheckedItems(next)
-  }
+  }, [checkedItems, domains, updateCheckedItems])
 
-  // 获取勾选的域名列表（用于写 hosts）
-  const getEnabledDomains = () =>
-    domains.filter(d => checkedItems[d.id] && !d.match_domain.includes("/"))
+  // 获取勾选的域名列表
+  const getEnabledDomains = useCallback(() => 
+    domains.filter(d => checkedItems[d.id] && !d.match_domain.includes("/")),
+  [domains, checkedItems])
 
-  // DoH 解析
+  // 4. 重构测速逻辑，使用 Promise.allSettled 避免测速按钮状态过早重置
   const resolveAll = async () => {
     setResolving(true)
-    const enabledDomains = getEnabledDomains()
-    const result = await window.electronAPI?.acceleratorResolveAll(enabledDomains)
-    if (result) {
-      setResolved(prev => ({ ...prev, ...result }))
+    try {
+      const enabledDomains = getEnabledDomains()
+      const result = await window.electronAPI?.acceleratorResolveAll(enabledDomains)
+      if (result) {
+        setResolved(prev => ({ ...prev, ...result }))
 
-      // 并发双向 Ping 测速
-      Object.entries(result).forEach(async ([domain, ip]) => {
-        try {
-          const both = await window.electronAPI?.acceleratorPingBoth(domain, ip)
-          setLatencies(prev => ({ ...prev, [domain]: { before: both?.before ?? -1, after: both?.after ?? -1 } }))
-        } catch {
-          setLatencies(prev => ({ ...prev, [domain]: { before: -1, after: -1 } }))
-        }
-      })
+        const pingPromises = Object.entries(result).map(async ([domain, ip]) => {
+          try {
+            const both = await window.electronAPI?.acceleratorPingBoth(domain, ip)
+            setLatencies(prev => ({ ...prev, [domain]: { before: both?.before ?? -1, after: both?.after ?? -1 } }))
+          } catch {
+            setLatencies(prev => ({ ...prev, [domain]: { before: -1, after: -1 } }))
+          }
+        })
+        
+        await Promise.allSettled(pingPromises)
+      }
+    } catch (e) {
+      setError("测速遇到意外异常: " + (e as Error).message)
+    } finally {
+      setResolving(false)
     }
-    setResolving(false)
   }
 
-  // 启动
   const startAccelerator = async () => {
     setStarting(true)
     setError(null)
@@ -218,29 +242,38 @@ export function AcceleratorPage() {
       setStarting(false)
       return
     }
-    const result = await window.electronAPI?.acceleratorStart(enabledDomains)
-    if (result?.success) {
-      setRunning(true)
-      setHasResidual(true)
-      if (result.hostsMap) setResolved(prev => ({ ...prev, ...result.hostsMap }))
-    } else {
-      setError(result?.error || "启动失败")
+    try {
+      const result = await window.electronAPI?.acceleratorStart(enabledDomains)
+      if (result?.success) {
+        setRunning(true)
+        setHasResidual(true)
+        if (result.hostsMap) setResolved(prev => ({ ...prev, ...result.hostsMap }))
+      } else {
+        setError(result?.error || "启动失败")
+      }
+    } catch (e) {
+      setError("启动加速组件出错：" + (e as Error).message)
+    } finally {
+      setStarting(false)
     }
-    setStarting(false)
   }
 
-  // 停止
   const stopAccelerator = async () => {
     setStarting(true)
-    const result = await window.electronAPI?.acceleratorStop()
-    if (result?.success) {
-      setRunning(false)
-      setHasResidual(false)
-      setResolved({})
-    } else {
-      setError(result?.error || "停止失败")
+    try {
+      const result = await window.electronAPI?.acceleratorStop()
+      if (result?.success) {
+        setRunning(false)
+        setHasResidual(false)
+        setResolved({})
+      } else {
+        setError(result?.error || "停止失败")
+      }
+    } catch (e) {
+      setError("停止加速组件出错：" + (e as Error).message)
+    } finally {
+      setStarting(false)
     }
-    setStarting(false)
   }
 
   if (loading) {
@@ -325,9 +358,9 @@ export function AcceleratorPage() {
         )}
       </div>
 
-      {/* 主体：左侧分组列表 + 右侧细项 */}
+      {/* 主体 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧分组列表 */}
+        {/* 左侧 */}
         <div className="w-64 shrink-0 border-r border-zinc-700/30 overflow-y-auto bg-zinc-900/30">
           <div className="p-2 space-y-0.5">
             {sortedGroupNames.map(groupName => {
@@ -346,7 +379,6 @@ export function AcceleratorPage() {
                     : "hover:bg-zinc-800/50 border border-transparent"
                     }`}
                 >
-                  {/* 三态勾选框 */}
                   <button
                     onClick={(e) => { e.stopPropagation(); toggleGroupCheck(groupName) }}
                     disabled={running}
@@ -392,14 +424,12 @@ export function AcceleratorPage() {
           </div>
         </div>
 
-        {/* 右侧细项列表 */}
+        {/* 右侧 */}
         <div className="flex-1 overflow-y-auto bg-zinc-900/10">
           {selectedGroup ? (
             <div className="p-4">
-              {/* 全部启用按钮 */}
-              <div className="flex items-center gap-3 px-3 py-2.5 mb-2 rounded-lg bg-zinc-800/30">
+              <div className="flex items-center gap-3 px-3 py-2.5 mb-2 rounded-lg bg-zinc-800/30 cursor-pointer w-fit" onClick={() => { if(!running) toggleGroupCheck(selectedGroup) }}>
                 <button
-                  onClick={() => toggleGroupCheck(selectedGroup)}
                   disabled={running}
                   className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${getGroupCheckState(selectedGroup) === "all"
                       ? "bg-blue-500 border-blue-500"
@@ -411,10 +441,9 @@ export function AcceleratorPage() {
                   {getGroupCheckState(selectedGroup) === "all" && <Check className="w-3.5 h-3.5 text-white" />}
                   {getGroupCheckState(selectedGroup) === "partial" && <Minus className="w-3.5 h-3.5 text-white" />}
                 </button>
-                <span className="text-sm font-medium text-zinc-300">全部启用</span>
+                <span className="text-sm font-medium text-zinc-300 select-none">全部启用该分类</span>
               </div>
 
-              {/* 域名项 */}
               <div className="space-y-0.5">
                 {rootItems.map(item => {
                   const children = getChildren(item.id, currentGroupDomains)
@@ -424,7 +453,6 @@ export function AcceleratorPage() {
 
                   return (
                     <div key={item.id}>
-                      {/* 父项 */}
                       <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${hasChildren ? "bg-zinc-800/20" : "hover:bg-zinc-800/20"
                         }`}>
                         <button
@@ -439,8 +467,8 @@ export function AcceleratorPage() {
                           {isChecked && <Check className="w-3 h-3 text-white" />}
                         </button>
 
-                        <div className="flex-1 min-w-0">
-                          <span className={`text-sm ${hasChildren ? "font-medium text-zinc-200" : "text-zinc-300"}`}>
+                        <div className="flex-1 min-w-0" onClick={() => { if(!hasChildren && !running) toggleItem(item) }}>
+                          <span className={`text-sm cursor-pointer select-none ${hasChildren ? "font-medium text-zinc-200" : "text-zinc-300"}`}>
                             {item.name}
                           </span>
                         </div>
@@ -460,7 +488,7 @@ export function AcceleratorPage() {
                                 </span>
                               </div>
                             )}
-                            <span className="text-[11px] font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded">
+                            <span className="text-[11px] font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded select-all">
                               {ip}
                             </span>
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -468,17 +496,16 @@ export function AcceleratorPage() {
                         )}
                       </div>
 
-                      {/* 子项 */}
                       {hasChildren && children.map(child => {
                         const childChecked = checkedItems[child.id]
                         const childIp = child.forward_ip || resolved[child.match_domain]
                         return (
                           <div
                             key={child.id}
-                            className="flex items-center gap-3 pl-10 pr-3 py-2 hover:bg-zinc-800/20 rounded-lg transition-colors"
+                            className="flex items-center gap-3 pl-10 pr-3 py-2 hover:bg-zinc-800/20 rounded-lg transition-colors cursor-pointer"
+                            onClick={() => { if(!running) toggleItem(child) }}
                           >
                             <button
-                              onClick={() => toggleItem(child)}
                               disabled={running}
                               className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${childChecked
                                   ? "bg-blue-500 border-blue-500"
@@ -487,9 +514,9 @@ export function AcceleratorPage() {
                             >
                               {childChecked && <Check className="w-2.5 h-2.5 text-white" />}
                             </button>
-                            <span className="flex-1 text-sm text-zinc-400">{child.name}</span>
+                            <span className="flex-1 text-sm text-zinc-400 select-none">{child.name}</span>
                             {childIp && (
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                                 {latencies[child.match_domain] && (
                                   <div className="flex items-center gap-1.5 mr-2">
                                     <span className="text-[10px] text-red-400">
@@ -503,7 +530,7 @@ export function AcceleratorPage() {
                                     </span>
                                   </div>
                                 )}
-                                <span className="text-[11px] font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded">
+                                <span className="text-[11px] font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded select-all">
                                   {childIp}
                                 </span>
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -528,7 +555,7 @@ export function AcceleratorPage() {
         </div>
       </div>
 
-      {/* 底栏说明 */}
+      {/* 底栏 */}
       <div className="shrink-0 px-6 py-2.5 border-t border-zinc-700/30 bg-zinc-900/50">
         <p className="text-[11px] text-zinc-600">
           基于本地特权 HTTPS 代理与 SNI 伪装无缝绕过深度连接阻断。不会干扰系统全局网络，不产生安全污染。

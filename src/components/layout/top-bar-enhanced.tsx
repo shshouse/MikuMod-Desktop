@@ -2,16 +2,13 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
-  Loader2,
   LogOut,
   Mail,
   Search,
   Settings,
   User,
-  X,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
 import { fetchMyProfile, fetchUnreadNotifications } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
 import { supabase } from "@/lib/supabase"
@@ -38,31 +35,28 @@ export function TopBarEnhanced({
   onSearchChange,
 }: TopBarEnhancedProps) {
   const [userProfile, setUserProfile] = useState<{ username: string; avatar_url: string | null } | null>(null)
-  const [showLoginModal, setShowLoginModal] = useState(false)
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
-  const [loginError, setLoginError] = useState("")
   const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
+    let unmounted = false
+
     async function getUser() {
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
-      if (!session?.user) {
+      if (!session?.user || unmounted) {
         return
       }
 
       try {
         const profile = await fetchMyProfile(session.user.id)
-        setUserProfile(profile)
+        if (!unmounted) setUserProfile(profile)
       } catch (error) {
         console.error(error)
       }
 
-      await loadNotifications()
+      await loadNotifications(unmounted)
     }
 
     void getUser()
@@ -70,44 +64,77 @@ export function TopBarEnhanced({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (unmounted) return
       if (event === "SIGNED_IN" && session?.user) {
         try {
           const profile = await fetchMyProfile(session.user.id)
-          setUserProfile(profile)
-          await loadNotifications()
+          if (!unmounted) setUserProfile(profile)
+          await loadNotifications(unmounted)
         } catch (error) {
           console.error(error)
         }
-        setShowLoginModal(false)
       } else if (event === "SIGNED_OUT") {
-        setUserProfile(null)
-        setUnreadCount(0)
+        if (!unmounted) {
+          setUserProfile(null)
+          setUnreadCount(0)
+        }
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      unmounted = true
+      subscription.unsubscribe()
+    }
   }, [])
 
-  const loadNotifications = async () => {
+  // Deep Link: handle auth callback from web login
+  useEffect(() => {
+    let unmounted = false
+
+    const handler = async (url: string) => {
+      if (unmounted || !url.startsWith("mikumod://auth-callback")) return
+      
+      try {
+        const urlObj = new URL(url)
+        const accessToken = urlObj.searchParams.get("access_token")
+        const refreshToken = urlObj.searchParams.get("refresh_token")
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+        }
+      } catch (error) {
+        console.error("Auth callback error:", error)
+      }
+    }
+    
+    // 如果 preload 中定义了返回 cleanup 方法会接管
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cleanup = (window as any).electronAPI?.onDeepLink?.(handler)
+
+    return () => {
+      unmounted = true
+      if (typeof cleanup === 'function') {
+        cleanup()
+      } else if (typeof (window as any).electronAPI?.removeDeepLinkListener === 'function') {
+        (window as any).electronAPI.removeDeepLinkListener(handler)
+      }
+    }
+  }, [])
+
+  const loadNotifications = async (isUnmounted = false) => {
     try {
       const count = await fetchUnreadNotifications()
-      setUnreadCount(count || 0)
+      if (!isUnmounted) setUnreadCount(count || 0)
     } catch (error) {
       console.error(error)
     }
   }
 
-  const handleLoginSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setIsLoggingIn(true)
-    setLoginError("")
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    setIsLoggingIn(false)
-
-    if (error) {
-      setLoginError(error.message === "Invalid login credentials" ? "账号或密码错误" : error.message)
-    }
+  const handleLogin = async () => {
+    const settings = getDesktopSettings()
+    await window.electronAPI?.openExternal(`${settings.webBaseUrl}/login?redirect=desktop`)
   }
 
   const handleLogout = async () => {
@@ -191,7 +218,7 @@ export function TopBarEnhanced({
             <button
               onClick={() => {
                 if (!userProfile) {
-                  setShowLoginModal(true)
+                  handleLogin()
                   return
                 }
                 void openWebPath("/settings")
@@ -224,62 +251,6 @@ export function TopBarEnhanced({
           </div>
         </div>
       </div>
-
-      {showLoginModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm no-drag">
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl relative">
-            <button
-              onClick={() => setShowLoginModal(false)}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="text-center mb-6">
-              <h3 className="text-xl font-bold tracking-tight">通行证登录</h3>
-              <p className="text-sm text-muted-foreground mt-1.5">登录 MikuMod 账号同步桌面端数据</p>
-            </div>
-
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <input
-                  type="email"
-                  placeholder="邮箱"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                />
-                <input
-                  type="password"
-                  placeholder="密码"
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              {loginError && (
-                <div className="px-3 py-2 rounded-md bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20">
-                  {loginError}
-                </div>
-              )}
-
-              <Button type="submit" className="w-full font-medium" disabled={isLoggingIn}>
-                {isLoggingIn ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    登录中...
-                  </>
-                ) : (
-                  "立即登录"
-                )}
-              </Button>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   )
 }
