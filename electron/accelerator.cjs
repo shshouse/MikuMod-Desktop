@@ -24,13 +24,8 @@ const CA_CERT_FILE = 'mikumod_ca.pem'
 const CA_KEY_FILE = 'mikumod_ca_key.pem'
 const CA_COMMON_NAME = 'MikuMod Accelerator CA'
 const PROXY_PORT = 443
-
-// Worker 中转配置（用于 Fastly CDN + GFW SNI 双重封锁的域名）
-// 部署后替换为你的 Worker 域名和密钥
-const WORKER_RELAY_URL = 'https://relay.invalid'
-const WORKER_SECRET = 'REDACTED'
-
-// 需要走 Worker 中转的域名（Fastly CDN + GFW SNI 过滤）
+const WORKER_RELAY_URL = process.env.WORKER_RELAY_URL
+const WORKER_SECRET = process.env.WORKER_RELAY_SECRET
 const WORKER_RELAY_DOMAINS = new Set([
   'github.com', 'github.dev', 'api.github.com', 'github.githubassets.com',
   'education.github.com', 'resources.github.com', 'uploads.github.com',

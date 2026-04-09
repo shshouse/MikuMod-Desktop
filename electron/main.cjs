@@ -16,6 +16,65 @@ if (!gotLock) {
 let mainWindow = null
 const activeDownloads = new Map() // { id: DownloadItem }
 
+// === Security: path & URL validation ===
+const ALLOWED_EXTERNAL_DOMAINS = new Set([
+  'mikumod.com', 'www.mikumod.com',
+  'REDACTED.icu', 'www.REDACTED.icu',
+  'github.com',
+])
+
+function isAllowedExternalUrl(url) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+    const host = parsed.hostname.toLowerCase()
+    for (const domain of ALLOWED_EXTERNAL_DOMAINS) {
+      if (host === domain || host.endsWith('.' + domain)) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+const ALLOWED_HTTP_DOMAINS = new Set([
+  'mikumod.com', 'www.mikumod.com',
+  'REDACTED.icu', 'www.REDACTED.icu',
+])
+
+function isAllowedHttpDomain(url) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+    const host = parsed.hostname.toLowerCase()
+    if (host.endsWith('.supabase.co') || host.endsWith('.supabase.in')) return true
+    for (const domain of ALLOWED_HTTP_DOMAINS) {
+      if (host === domain || host.endsWith('.' + domain)) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+function getSafeBaseDirs() {
+  const appDir = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : path.resolve(__dirname, '..')
+  return [
+    path.normalize(appDir),
+    path.normalize(app.getPath('userData')),
+    path.normalize(app.getPath('downloads')),
+    path.normalize(app.getPath('temp')),
+  ]
+}
+
+function isPathAllowed(targetPath) {
+  const normalized = path.normalize(path.resolve(targetPath))
+  const baseDirs = getSafeBaseDirs()
+  return baseDirs.some(base => normalized.startsWith(base + path.sep) || normalized === base)
+}
+
 // === Steam 路径检测工具 (完全异步) ===
 async function getSteamPath() {
   if (process.platform !== 'win32') return null
@@ -87,9 +146,13 @@ function createWindow() {
     mainWindow.show()
   })
 
-  // 外部链接用默认浏览器打开
+  // 外部链接用默认浏览器打开 (仅允许白名单域名)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url).catch(() => {})
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(url).catch(() => {})
+    } else {
+      console.warn(`setWindowOpenHandler blocked: ${url}`)
+    }
     return { action: 'deny' }
   })
 }
@@ -116,27 +179,39 @@ ipcMain.handle('select-directory', async () => {
   }
 })
 
-// 打开目录
+// 打开目录 (限制在安全目录)
 ipcMain.handle('open-directory', async (_e, dirPath) => {
   try {
+    if (!isPathAllowed(dirPath)) {
+      console.warn(`open-directory blocked: ${dirPath}`)
+      return
+    }
     await shell.openPath(dirPath)
   } catch (error) {
     console.error('open-directory error:', error)
   }
 })
 
-// 打开外部链接
+// 打开外部链接 (仅允许白名单域名的 https/http 链接)
 ipcMain.handle('open-external', async (_e, url) => {
   try {
+    if (!isAllowedExternalUrl(url)) {
+      console.warn(`open-external blocked: ${url}`)
+      return
+    }
     await shell.openExternal(url)
   } catch (error) {
     console.error('open-external error:', error)
   }
 })
 
-// 请求安全代理与异常处理
+// 请求安全代理与异常处理 (仅允许受信域名)
 ipcMain.handle('http-request', async (_e, url, options = {}) => {
   try {
+    if (!isAllowedHttpDomain(url)) {
+      console.warn(`http-request blocked: ${url}`)
+      return { ok: false, status: 403, text: 'Domain not allowed' }
+    }
     const response = await fetch(url, options)
     const text = await response.text()
     return {
@@ -150,9 +225,10 @@ ipcMain.handle('http-request', async (_e, url, options = {}) => {
   }
 })
 
-// 检查文件是否存在
+// 检查文件是否存在 (限制在安全目录)
 ipcMain.handle('file-exists', async (_e, filePath) => {
   try {
+    if (!isPathAllowed(filePath)) return false
     await fsPromises.access(filePath)
     return true
   } catch {
@@ -160,9 +236,13 @@ ipcMain.handle('file-exists', async (_e, filePath) => {
   }
 })
 
-// 读取文件 (安全访问)
+// 读取文件 (限制在安全目录)
 ipcMain.handle('read-file', async (_e, filePath) => {
   try {
+    if (!isPathAllowed(filePath)) {
+      console.warn(`read-file blocked: ${filePath}`)
+      return null
+    }
     return await fsPromises.readFile(filePath, 'utf-8')
   } catch (error) {
     console.error(`read-file error (${filePath}):`, error)
@@ -170,9 +250,13 @@ ipcMain.handle('read-file', async (_e, filePath) => {
   }
 })
 
-// 写入文件 (带目录创建与错误兜底)
+// 写入文件 (限制在安全目录)
 ipcMain.handle('write-file', async (_e, filePath, content) => {
   try {
+    if (!isPathAllowed(filePath)) {
+      console.warn(`write-file blocked: ${filePath}`)
+      return false
+    }
     const dir = path.dirname(filePath)
     await fsPromises.mkdir(dir, { recursive: true })
     await fsPromises.writeFile(filePath, content, 'utf-8')
@@ -183,9 +267,13 @@ ipcMain.handle('write-file', async (_e, filePath, content) => {
   }
 })
 
-// 扫描目录
+// 扫描目录 (限制在安全目录)
 ipcMain.handle('scan-directory', async (_e, dirPath) => {
   try {
+    if (!isPathAllowed(dirPath)) {
+      console.warn(`scan-directory blocked: ${dirPath}`)
+      return []
+    }
     const entries = await fsPromises.readdir(dirPath, { withFileTypes: true })
     return entries.filter(e => e.isDirectory()).map(e => e.name)
   } catch (error) {
@@ -194,9 +282,13 @@ ipcMain.handle('scan-directory', async (_e, dirPath) => {
   }
 })
 
-// 删除文件
+// 删除文件 (限制在安全目录)
 ipcMain.handle('delete-file', async (_e, filePath) => {
   try {
+    if (!isPathAllowed(filePath)) {
+      console.warn(`delete-file blocked: ${filePath}`)
+      return false
+    }
     await fsPromises.unlink(filePath)
     return true
   } catch (error) {
