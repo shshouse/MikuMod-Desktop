@@ -12,7 +12,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   writeFile: (path, content) => ipcRenderer.invoke('write-file', path, content),
   scanDirectory: (path) => ipcRenderer.invoke('scan-directory', path),
   deleteFile: (path) => ipcRenderer.invoke('delete-file', path),
+  copyFile: (src, dest) => ipcRenderer.invoke('copy-file', src, dest),
   scanSteamGames: () => ipcRenderer.invoke('scan-steam-games'),
+
+  // 嵌入式登录窗口
+  openLoginWindow: (url) => ipcRenderer.invoke('open-login-window', url),
 
   // 窗口控制
   minimize: () => ipcRenderer.invoke('window-minimize'),

@@ -11,6 +11,10 @@ import { GameModsPage } from "@/pages/game-mods"
 import { fetchGames } from "@/lib/api"
 import { getCustomGames, getLocalGamePaths, saveLocalGamePaths } from "@/lib/desktop-config"
 import { AcceleratorPage } from "@/pages/accelerator"
+import { ModDetailPage } from "@/pages/mod-detail"
+import { PostDetailPage } from "@/pages/post-detail"
+import { UserProfilePage } from "@/pages/user-profile"
+import { NotificationsPage } from "@/pages/notifications"
 
 function App() {
   const [activeTab, setActiveTab] = useState("mods")
@@ -82,6 +86,25 @@ function App() {
   }
 
   const currentPage = useMemo(() => {
+    // mod:123 — in-app mod detail page
+    if (activeTab.startsWith("mod:")) {
+      const modNumber = activeTab.slice(4)
+      return <ModDetailPage modNumber={modNumber} onNavigate={navigateTo} onBack={handleBack} />
+    }
+
+    // post:123 — in-app post detail page
+    if (activeTab.startsWith("post:")) {
+      const postId = activeTab.slice(5)
+      return <PostDetailPage postId={postId} onNavigate={navigateTo} onBack={handleBack} />
+    }
+
+    // user:123 — in-app user profile page
+    if (activeTab.startsWith("user:")) {
+      const userNumber = activeTab.slice(5)
+      return <UserProfilePage userNumber={userNumber} onNavigate={navigateTo} />
+    }
+
+    // game:uuid — game mods page
     if (activeTab.startsWith("game:")) {
       const gameId = activeTab.slice(5)
       const game =
@@ -100,9 +123,9 @@ function App() {
 
     switch (activeTab) {
       case "mods":
-        return <ModsPageEnhanced searchQuery={searchQuery} />
+        return <ModsPageEnhanced searchQuery={searchQuery} onNavigate={navigateTo} />
       case "community":
-        return <CommunityFeed searchQuery={searchQuery} />
+        return <CommunityFeed searchQuery={searchQuery} onNavigate={navigateTo} />
       case "games":
         return (
           <GamesPageEnhanced
@@ -117,10 +140,12 @@ function App() {
         return <DownloadsPageEnhanced />
       case "accelerator":
         return <AcceleratorPage />
+      case "notifications":
+        return <NotificationsPage onNavigate={navigateTo} />
       case "settings":
         return <SettingsPageEnhanced />
       default:
-        return <ModsPageEnhanced searchQuery={searchQuery} />
+        return <ModsPageEnhanced searchQuery={searchQuery} onNavigate={navigateTo} />
     }
   }, [activeTab, searchQuery, localPaths, customGames, platformGames, persistPaths, handleSetPath])
 

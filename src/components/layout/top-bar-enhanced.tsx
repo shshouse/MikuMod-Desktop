@@ -184,7 +184,7 @@ export function TopBarEnhanced({
 
         <div className="flex items-center gap-1 no-drag">
           <button
-            onClick={() => openWebPath("/notifications")}
+            onClick={() => onNavigate("notifications")}
             className="relative w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             title="打开通知中心"
           >

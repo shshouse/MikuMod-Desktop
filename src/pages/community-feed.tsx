@@ -8,6 +8,7 @@ import { getDesktopSettings } from "@/lib/desktop-config"
 
 interface CommunityFeedProps {
   searchQuery: string
+  onNavigate?: (tab: string) => void
 }
 
 const categoryColors: Record<string, string> = {
@@ -22,26 +23,39 @@ const categoryColors: Record<string, string> = {
   分享: "bg-pink-500/10 text-pink-400",
 }
 
-export function CommunityFeed({ searchQuery }: CommunityFeedProps) {
+export function CommunityFeed({ searchQuery, onNavigate }: CommunityFeedProps) {
   const [posts, setPosts] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const PAGE_SIZE = 20
 
   useEffect(() => {
-    async function loadPosts() {
-      setIsLoading(true)
-      try {
-        const data = await fetchPosts({ limit: 20 })
-        setPosts(data.data || [])
-      } catch (error) {
-        console.error("Failed to fetch posts:", error)
-        setPosts([])
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    void loadPosts()
+    loadPosts(1)
   }, [])
+
+  async function loadPosts(p: number) {
+    if (p === 1) setIsLoading(true)
+    else setLoadingMore(true)
+    try {
+      const data = await fetchPosts({ limit: PAGE_SIZE, page: p })
+      const items = data.data || []
+      if (p === 1) {
+        setPosts(items)
+      } else {
+        setPosts((prev) => [...prev, ...items])
+      }
+      setTotal(data.total || 0)
+      setPage(p)
+    } catch (error) {
+      console.error("Failed to fetch posts:", error)
+      if (p === 1) setPosts([])
+    } finally {
+      setIsLoading(false)
+      setLoadingMore(false)
+    }
+  }
 
   const filteredPosts = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -56,10 +70,16 @@ export function CommunityFeed({ searchQuery }: CommunityFeedProps) {
     })
   }, [posts, searchQuery])
 
-  const openPost = async (postId: string | number) => {
-    const settings = getDesktopSettings()
-    await window.electronAPI?.openExternal(`${settings.webBaseUrl}/forum/${postId}`)
+  const openPost = (postId: string | number) => {
+    if (onNavigate) {
+      onNavigate(`post:${postId}`)
+    } else {
+      const settings = getDesktopSettings()
+      void window.electronAPI?.openExternal(`${settings.webBaseUrl}/forum/${postId}`)
+    }
   }
+
+  const hasMore = page * PAGE_SIZE < total
 
   return (
     <div className="flex flex-col h-full">
@@ -149,12 +169,25 @@ export function CommunityFeed({ searchQuery }: CommunityFeedProps) {
                     )}
                   </div>
 
-                  <Button variant="ghost" size="sm" onClick={() => void openPost(post.id)}>
+                  <Button variant="ghost" size="sm" onClick={() => openPost(post.id)}>
                     查看
                   </Button>
                 </div>
               )
             })}
+
+            {hasMore && (
+              <div className="text-center py-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadPosts(page + 1)}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : `加载更多 (${posts.length}/${total})`}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

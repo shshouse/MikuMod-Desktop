@@ -9,6 +9,7 @@ export interface ElectronAPI {
   writeFile: (path: string, content: string) => Promise<void>
   scanDirectory: (path: string) => Promise<string[]>
   deleteFile: (path: string) => Promise<void>
+  copyFile: (src: string, dest: string) => Promise<boolean>
   scanSteamGames: () => Promise<Array<{ appId: string; name: string; installPath: string }>>
   minimize: () => Promise<void>
   maximize: () => Promise<void>

@@ -282,6 +282,24 @@ ipcMain.handle('scan-directory', async (_e, dirPath) => {
   }
 })
 
+// 复制文件 (源和目标都必须在安全目录内)
+ipcMain.handle('copy-file', async (_e, srcPath, destPath) => {
+  try {
+    if (!isPathAllowed(srcPath)) {
+      console.warn(`copy-file src blocked: ${srcPath}`)
+      return false
+    }
+    // 目标路径需要动态加入安全目录 (用户指定的游戏目录)
+    const destDir = path.dirname(destPath)
+    await fsPromises.mkdir(destDir, { recursive: true })
+    await fsPromises.copyFile(srcPath, destPath)
+    return true
+  } catch (error) {
+    console.error(`copy-file error (${srcPath} -> ${destPath}):`, error)
+    return false
+  }
+})
+
 // 删除文件 (限制在安全目录)
 ipcMain.handle('delete-file', async (_e, filePath) => {
   try {
@@ -429,6 +447,60 @@ ipcMain.handle('window-maximize', () => {
 ipcMain.handle('window-close', () => { try { mainWindow?.close() } catch {} })
 ipcMain.handle('window-is-maximized', () => {
   try { return mainWindow?.isMaximized() || false } catch { return false }
+})
+
+// === Embedded OAuth Login Window ===
+let loginWindow = null
+
+ipcMain.handle('open-login-window', async (_e, loginUrl) => {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.focus()
+    return
+  }
+
+  loginWindow = new BrowserWindow({
+    width: 480,
+    height: 680,
+    parent: mainWindow,
+    modal: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    backgroundColor: '#09090b',
+    title: 'MikuMod 登录',
+    autoHideMenuBar: true,
+  })
+
+  loginWindow.loadURL(loginUrl)
+
+  // Watch for navigation to auth-callback deep link or redirect URL
+  loginWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('mikumod://auth-callback')) {
+      event.preventDefault()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('deep-link', url)
+      }
+      loginWindow.close()
+    }
+  })
+
+  loginWindow.webContents.on('will-redirect', (event, url) => {
+    if (url.startsWith('mikumod://auth-callback')) {
+      event.preventDefault()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('deep-link', url)
+      }
+      loginWindow.close()
+    }
+  })
+
+  loginWindow.on('closed', () => {
+    loginWindow = null
+  })
 })
 
 app.whenReady().then(() => {

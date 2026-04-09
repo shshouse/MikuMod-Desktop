@@ -91,3 +91,134 @@ export async function fetchUnreadNotifications() {
   const data = await authenticatedFetch(`${getApiBase()}/notifications?limit=1&unread_only=true`)
   return data.unread_count
 }
+
+// === Mod Detail ===
+
+export async function fetchModDetail(modNumber: string) {
+  const url = new URL(`${getApiBase()}/mods/${modNumber}/download`)
+  // We use the search endpoint with a workaround — but actually we can use supabase directly
+  // since the desktop has supabase client. Let's use it for richer data.
+  const { supabase: sb } = await import('./supabase')
+
+  const { data: mods } = await sb
+    .from('mod')
+    .select('*,game:games(id,name,game_number),author:users!mod_author_id_fkey(id,user_number,username,avatar_url,bio)')
+    .eq('mod_number', modNumber)
+    .eq('status', 'approved')
+    .limit(1)
+
+  const mod = mods?.[0]
+  if (!mod) return null
+
+  const [versionsRes, reviewsRes] = await Promise.all([
+    sb
+      .from('mod_versions')
+      .select('*')
+      .eq('mod_id', mod.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false }),
+    sb
+      .from('mod_reviews')
+      .select('*,user:users!mod_reviews_user_id_fkey(id,user_number,username,avatar_url)')
+      .eq('mod_id', mod.id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ])
+
+  return {
+    mod,
+    versions: versionsRes.data || [],
+    reviews: reviewsRes.data || [],
+  }
+}
+
+// === Post Detail ===
+
+export async function fetchPostDetail(postId: string) {
+  const url = `${getApiBase()}/community/posts/${postId}`
+  const json = await requestJson(url)
+  if (!json.success) throw new Error(json.error || 'Failed to fetch post')
+  return json.data
+}
+
+export async function fetchPostReplies(postId: string) {
+  const url = `${getApiBase()}/community/posts/${postId}/replies`
+  const json = await requestJson(url)
+  if (!json.success) throw new Error(json.error || 'Failed to fetch replies')
+  return json.data
+}
+
+export async function fetchPostLikeStatus(postId: string) {
+  try {
+    const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/like`)
+    return data // { count, liked }
+  } catch {
+    // Not logged in or error — return defaults
+    const url = `${getApiBase()}/community/posts/${postId}/like`
+    const json = await requestJson(url)
+    if (json.success) return json.data
+    return { count: 0, liked: false }
+  }
+}
+
+export async function togglePostLike(postId: string) {
+  const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/like`, {
+    method: 'POST',
+  })
+  return data // { liked, count }
+}
+
+export async function submitPostReply(postId: string, content: string, parentId?: number) {
+  const body: Record<string, unknown> = { content }
+  if (parentId) body.parent_id = parentId
+
+  const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/replies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return data
+}
+
+// === Notifications ===
+
+export async function fetchNotifications(params: { limit?: number; offset?: number; unread_only?: boolean } = {}) {
+  const url = new URL(`${getApiBase()}/notifications`)
+  if (params.limit) url.searchParams.set('limit', params.limit.toString())
+  if (params.offset) url.searchParams.set('offset', params.offset.toString())
+  if (params.unread_only) url.searchParams.set('unread_only', 'true')
+
+  const data = await authenticatedFetch(url.toString())
+  return data // { notifications, unread_count, total, has_more }
+}
+
+export async function markNotificationsRead(ids?: string[]) {
+  const body = ids ? { action: 'read', ids } : { action: 'read_all' }
+  const data = await authenticatedFetch(`${getApiBase()}/notifications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return data
+}
+
+// === User Profile ===
+
+export async function fetchUserProfile(userNumber: string) {
+  const url = `${getApiBase()}/user/${userNumber}`
+  const json = await requestJson(url)
+  if (!json.success) throw new Error(json.error || 'Failed to fetch user profile')
+  return json.data // { profile, stats, recentPosts, recentReviews, recentMods }
+}
+
+// === Mod Reviews ===
+
+export async function submitModReview(modId: string, content: string, isPositive: boolean) {
+  const data = await authenticatedFetch(`${getApiBase()}/mods/${modId}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, is_positive: isPositive }),
+  })
+  return data
+}

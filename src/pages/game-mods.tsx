@@ -2,7 +2,7 @@ import { ExternalLink, FolderOpen, Loader2, Package, Plus, TrendingUp } from "lu
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { fetchMods, getDownloadToken } from "@/lib/api"
-import { getDesktopSettings } from "@/lib/desktop-config"
+
 import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
 
 interface GameModsPageProps {
@@ -30,9 +30,8 @@ export function GameModsPage({ gameId, gameName, localPath, onSetPath, onNavigat
       .finally(() => setIsLoading(false))
   }, [gameId])
 
-  const openModDetail = async (modId: string) => {
-    const settings = getDesktopSettings()
-    await window.electronAPI?.openExternal(`${settings.webBaseUrl}/mods/${modId}`)
+  const openModDetail = (modNumber: string) => {
+    onNavigate(`mod:${modNumber}`)
   }
 
   const startDownload = async (mod: any) => {
@@ -137,7 +136,7 @@ export function GameModsPage({ gameId, gameName, localPath, onSetPath, onNavigat
                   key={mod.id}
                   className="group rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-200"
                 >
-                  <button className="w-full text-left" onClick={() => void openModDetail(mod.id)}>
+                  <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                     <div className="aspect-[16/9] bg-gradient-to-br from-muted to-muted/30 relative overflow-hidden">
                       {mod.thumbnail_url && (
                         <img
@@ -151,7 +150,7 @@ export function GameModsPage({ gameId, gameName, localPath, onSetPath, onNavigat
                   </button>
 
                   <div className="p-4 space-y-2">
-                    <button className="w-full text-left" onClick={() => void openModDetail(mod.id)}>
+                    <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                       <h3 className="font-semibold text-sm leading-tight group-hover:text-blue-400 transition-colors line-clamp-2">
                         {mod.title}
                       </h3>
@@ -171,7 +170,7 @@ export function GameModsPage({ gameId, gameName, localPath, onSetPath, onNavigat
                       ))}
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => void openModDetail(mod.id)}>
+                      <Button variant="outline" size="sm" className="flex-1" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                         <ExternalLink className="w-4 h-4" />
                         详情
                       </Button>

@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, FolderOpen, Loader2, Pause, Play, Trash2, XCircle } from "lucide-react"
+import { CheckCircle2, Download, FolderOpen, HardDriveDownload, Loader2, Pause, Play, Trash2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
 
@@ -69,6 +69,23 @@ export function DownloadsPageEnhanced() {
                   </span>
 
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {download.status === "done" && download.savePath && !download.installed ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-green-500"
+                        title="安装到游戏目录"
+                        onClick={async () => {
+                          const gamePath = await window.electronAPI?.selectDirectory()
+                          if (gamePath) void store.installToGame(download.id, gamePath)
+                        }}
+                      >
+                        <HardDriveDownload className="w-4 h-4" />
+                      </Button>
+                    ) : null}
+                    {download.installed ? (
+                      <span className="text-[10px] text-green-400 font-medium px-2">已安装</span>
+                    ) : null}
                     {download.status === "done" && download.savePath ? (
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => void store.openFolder(download.id)}>
                         <FolderOpen className="w-4 h-4" />

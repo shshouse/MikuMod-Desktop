@@ -10,29 +10,44 @@ const categories = ["全部", "热门", "最新", "推荐"] as const
 
 interface ModsPageEnhancedProps {
   searchQuery: string
+  onNavigate?: (tab: string) => void
 }
 
-export function ModsPageEnhanced({ searchQuery }: ModsPageEnhancedProps) {
+export function ModsPageEnhanced({ searchQuery, onNavigate }: ModsPageEnhancedProps) {
   const [activeCategory, setActiveCategory] = useState<(typeof categories)[number]>("全部")
   const [mods, setMods] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const PAGE_SIZE = 24
 
   useEffect(() => {
-    async function loadMods() {
-      setIsLoading(true)
-      try {
-        const data = await fetchMods({ q: searchQuery || undefined, limit: 24 })
-        setMods(data.mods || [])
-      } catch (error) {
-        console.error("Failed to fetch mods:", error)
-        setMods([])
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    void loadMods()
+    setPage(0)
+    setMods([])
+    loadMods(0)
   }, [searchQuery])
+
+  async function loadMods(p: number) {
+    if (p === 0) setIsLoading(true)
+    else setLoadingMore(true)
+    try {
+      const data = await fetchMods({ q: searchQuery || undefined, page: p, limit: PAGE_SIZE })
+      if (p === 0) {
+        setMods(data.mods || [])
+      } else {
+        setMods((prev) => [...prev, ...(data.mods || [])])
+      }
+      setTotal(data.total || 0)
+      setPage(p)
+    } catch (error) {
+      console.error("Failed to fetch mods:", error)
+      if (p === 0) setMods([])
+    } finally {
+      setIsLoading(false)
+      setLoadingMore(false)
+    }
+  }
 
   const filteredMods = useMemo(() => {
     switch (activeCategory) {
@@ -63,10 +78,16 @@ export function ModsPageEnhanced({ searchQuery }: ModsPageEnhancedProps) {
     }
   }
 
-  const openModDetail = async (modId: string) => {
-    const settings = getDesktopSettings()
-    await window.electronAPI?.openExternal(`${settings.webBaseUrl}/mods/${modId}`)
+  const openModDetail = (modNumber: string) => {
+    if (onNavigate) {
+      onNavigate(`mod:${modNumber}`)
+    } else {
+      const settings = getDesktopSettings()
+      void window.electronAPI?.openExternal(`${settings.webBaseUrl}/mods/${modNumber}`)
+    }
   }
+
+  const hasMore = (page + 1) * PAGE_SIZE < total
 
   return (
     <div className="flex flex-col h-full">
@@ -127,13 +148,14 @@ export function ModsPageEnhanced({ searchQuery }: ModsPageEnhancedProps) {
             <p className="text-sm">没有符合条件的模组</p>
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMods.map((mod) => (
               <div
                 key={mod.id}
                 className="group rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-200"
               >
-                <button className="w-full text-left" onClick={() => void openModDetail(mod.id)}>
+                <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                   <div className="aspect-[16/9] bg-gradient-to-br from-muted to-muted/30 relative overflow-hidden">
                     {mod.thumbnail_url ? (
                       <img
@@ -152,7 +174,7 @@ export function ModsPageEnhanced({ searchQuery }: ModsPageEnhancedProps) {
                 </button>
 
                 <div className="p-4 space-y-2">
-                  <button className="w-full text-left" onClick={() => void openModDetail(mod.id)}>
+                  <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                     <h3 className="font-semibold text-sm leading-tight group-hover:text-blue-400 transition-colors line-clamp-2">
                       {mod.title}
                     </h3>
@@ -172,7 +194,7 @@ export function ModsPageEnhanced({ searchQuery }: ModsPageEnhancedProps) {
                     ))}
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => void openModDetail(mod.id)}>
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                       <ExternalLink className="w-4 h-4" />
                       详情
                     </Button>
@@ -184,6 +206,19 @@ export function ModsPageEnhanced({ searchQuery }: ModsPageEnhancedProps) {
               </div>
             ))}
           </div>
+          {hasMore && (
+            <div className="text-center pt-6 pb-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => loadMods(page + 1)}
+                disabled={loadingMore}
+              >
+                {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : `加载更多 (${mods.length}/${total})`}
+              </Button>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>

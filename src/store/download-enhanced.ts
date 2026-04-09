@@ -13,6 +13,8 @@ export interface DownloadTask {
   speed?: string
   savePath?: string
   error?: string
+  installed?: boolean
+  installedPath?: string
 }
 
 class DownloadStoreEnhanced {
@@ -155,6 +157,38 @@ class DownloadStoreEnhanced {
 
     const folderPath = task.savePath.replace(/[\\/][^\\/]+$/, "")
     await window.electronAPI?.openDirectory(folderPath)
+  }
+
+  async installToGame(id: string, gamePath: string) {
+    const task = this.tasks.find((item) => item.id === id)
+    if (!task?.savePath || task.status !== "done") return false
+
+    try {
+      const api = window.electronAPI
+      if (!api) return false
+
+      const fileName = task.savePath.replace(/^.*[\\/]/, "")
+      const destPath = `${gamePath}\\Mods\\${fileName}`
+
+      const exists = await api.fileExists(task.savePath)
+      if (!exists) {
+        this.updateTask(id, { error: "下载文件不存在" })
+        return false
+      }
+
+      const ok = await api.copyFile(task.savePath, destPath)
+      if (!ok) {
+        this.updateTask(id, { error: "安装失败：文件复制出错" })
+        return false
+      }
+
+      this.updateTask(id, { installed: true, installedPath: destPath })
+      this.emit()
+      return true
+    } catch (err) {
+      console.error("installToGame error:", err)
+      return false
+    }
   }
 
   reset() {
