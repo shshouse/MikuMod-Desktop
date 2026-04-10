@@ -11,6 +11,15 @@ export interface ElectronAPI {
   deleteFile: (path: string) => Promise<void>
   copyFile: (src: string, dest: string) => Promise<boolean>
   scanSteamGames: () => Promise<Array<{ appId: string; name: string; installPath: string }>>
+  openLoginWindow: (url: string) => Promise<void>
+
+  // 自动更新
+  updaterCheck: () => Promise<{ available: boolean; info?: any; reason?: string }>
+  updaterDownload: () => Promise<boolean>
+  updaterInstall: () => void
+  getAppVersion: () => Promise<string>
+  onUpdaterEvent: (callback: (data: { type: string; info?: any; progress?: any; error?: string }) => void) => void
+
   minimize: () => Promise<void>
   maximize: () => Promise<void>
   close: () => Promise<void>

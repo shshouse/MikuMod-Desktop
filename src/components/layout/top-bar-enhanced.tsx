@@ -134,7 +134,13 @@ export function TopBarEnhanced({
 
   const handleLogin = async () => {
     const settings = getDesktopSettings()
-    await window.electronAPI?.openExternal(`${settings.webBaseUrl}/login?redirect=desktop`)
+    const loginUrl = `${settings.webBaseUrl}/login?redirect=desktop`
+    // Prefer embedded login window; fall back to system browser
+    if (window.electronAPI?.openLoginWindow) {
+      await window.electronAPI.openLoginWindow(loginUrl)
+    } else {
+      await window.electronAPI?.openExternal(loginUrl)
+    }
   }
 
   const handleLogout = async () => {

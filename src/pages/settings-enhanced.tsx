@@ -1,4 +1,4 @@
-import { FolderOpen, LogOut, RefreshCcw, Server, Settings2 } from "lucide-react"
+import { Download, FolderOpen, Loader2, LogOut, RefreshCcw, Server, Settings2, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { DEFAULT_SETTINGS, getDesktopSettings, saveDesktopSettings } from "@/lib/desktop-config"
@@ -9,8 +9,42 @@ export function SettingsPageEnhanced() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [savedMessage, setSavedMessage] = useState("")
 
+  // Auto-update state
+  const [appVersion, setAppVersion] = useState("")
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "downloading" | "ready" | "not-available" | "error">("idle")
+  const [updateInfo, setUpdateInfo] = useState<any>(null)
+  const [updateProgress, setUpdateProgress] = useState(0)
+  const [updateError, setUpdateError] = useState("")
+
   useEffect(() => {
     setSettings(getDesktopSettings())
+
+    // Get app version
+    window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
+
+    // Listen for updater events
+    window.electronAPI?.onUpdaterEvent?.((data) => {
+      switch (data.type) {
+        case "update-available":
+          setUpdateStatus("available")
+          setUpdateInfo(data.info)
+          break
+        case "update-not-available":
+          setUpdateStatus("not-available")
+          break
+        case "download-progress":
+          setUpdateStatus("downloading")
+          setUpdateProgress(data.progress?.percent || 0)
+          break
+        case "update-downloaded":
+          setUpdateStatus("ready")
+          break
+        case "error":
+          setUpdateStatus("error")
+          setUpdateError(data.error || "未知错误")
+          break
+      }
+    })
   }, [])
 
   const updateSettings = (nextSettings: typeof settings) => {
@@ -115,6 +149,97 @@ export function SettingsPageEnhanced() {
                   更改
                 </Button>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Auto-update section */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-medium flex items-center gap-2 text-foreground/80">
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            应用更新
+          </h3>
+
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground/90">当前版本</p>
+                <p className="text-xs text-muted-foreground mt-0.5">v{appVersion || "..."}</p>
+              </div>
+
+              {updateStatus === "idle" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-2"
+                  onClick={async () => {
+                    setUpdateStatus("checking")
+                    setUpdateError("")
+                    const result = await window.electronAPI?.updaterCheck?.()
+                    if (result && !result.available && result.reason !== undefined) {
+                      if (result.reason === "updater-not-available") {
+                        setUpdateStatus("not-available")
+                      } else {
+                        setUpdateStatus("error")
+                        setUpdateError(result.reason || "检查失败")
+                      }
+                    }
+                    // If available, the updater-event listener will handle it
+                  }}
+                >
+                  <RefreshCcw className="w-3.5 h-3.5" />
+                  检查更新
+                </Button>
+              )}
+              {updateStatus === "checking" && (
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  正在检查...
+                </span>
+              )}
+              {updateStatus === "not-available" && (
+                <span className="text-xs text-green-400">已是最新版本</span>
+              )}
+              {updateStatus === "available" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-2"
+                  onClick={async () => {
+                    setUpdateStatus("downloading")
+                    await window.electronAPI?.updaterDownload?.()
+                  }}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  下载更新 {updateInfo?.version ? `v${updateInfo.version}` : ""}
+                </Button>
+              )}
+              {updateStatus === "downloading" && (
+                <div className="flex items-center gap-3">
+                  <div className="w-32 h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full rounded-full bg-purple-500 transition-all" style={{ width: `${updateProgress}%` }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground">{Math.round(updateProgress)}%</span>
+                </div>
+              )}
+              {updateStatus === "ready" && (
+                <Button
+                  size="sm"
+                  className="h-8 gap-2"
+                  onClick={() => window.electronAPI?.updaterInstall?.()}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  立即重启安装
+                </Button>
+              )}
+              {updateStatus === "error" && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-destructive">{updateError}</span>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setUpdateStatus("idle")}>
+                    重试
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </section>

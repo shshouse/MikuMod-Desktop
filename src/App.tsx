@@ -15,6 +15,7 @@ import { ModDetailPage } from "@/pages/mod-detail"
 import { PostDetailPage } from "@/pages/post-detail"
 import { UserProfilePage } from "@/pages/user-profile"
 import { NotificationsPage } from "@/pages/notifications"
+import { ModderDashboard } from "@/pages/modder-dashboard"
 
 function App() {
   const [activeTab, setActiveTab] = useState("mods")
@@ -142,6 +143,8 @@ function App() {
         return <AcceleratorPage />
       case "notifications":
         return <NotificationsPage onNavigate={navigateTo} />
+      case "modder-dashboard":
+        return <ModderDashboard onNavigate={navigateTo} />
       case "settings":
         return <SettingsPageEnhanced />
       default:

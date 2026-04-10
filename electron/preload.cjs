@@ -18,6 +18,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 嵌入式登录窗口
   openLoginWindow: (url) => ipcRenderer.invoke('open-login-window', url),
 
+  // 自动更新
+  updaterCheck: () => ipcRenderer.invoke('updater-check'),
+  updaterDownload: () => ipcRenderer.invoke('updater-download'),
+  updaterInstall: () => ipcRenderer.invoke('updater-install'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdaterEvent: (callback) => {
+    ipcRenderer.on('updater-event', (_e, data) => callback(data))
+  },
+
   // 窗口控制
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),

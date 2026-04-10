@@ -7,6 +7,16 @@ const util = require('util')
 const exec = util.promisify(require('child_process').exec)
 const { registerAcceleratorIPC, cleanupOnExit } = require('./accelerator.cjs')
 
+// === Auto-update (electron-updater) ===
+let autoUpdater = null
+try {
+  autoUpdater = require('electron-updater').autoUpdater
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = true
+} catch {
+  // electron-updater not installed (dev mode) — skip
+}
+
 // 禁止多实例
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -503,8 +513,66 @@ ipcMain.handle('open-login-window', async (_e, loginUrl) => {
   })
 })
 
+// === Auto-update IPC ===
+function setupAutoUpdater() {
+  if (!autoUpdater) return
+
+  autoUpdater.on('update-available', (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater-event', { type: 'update-available', info })
+    }
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater-event', { type: 'update-not-available' })
+    }
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater-event', { type: 'download-progress', progress })
+    }
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater-event', { type: 'update-downloaded', info })
+    }
+  })
+
+  autoUpdater.on('error', (err) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater-event', { type: 'error', error: err?.message || String(err) })
+    }
+  })
+}
+
+ipcMain.handle('updater-check', async () => {
+  if (!autoUpdater) return { available: false, reason: 'updater-not-available' }
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    return { available: !!result?.updateInfo, info: result?.updateInfo }
+  } catch (err) {
+    return { available: false, reason: err?.message || String(err) }
+  }
+})
+
+ipcMain.handle('updater-download', async () => {
+  if (!autoUpdater) return false
+  try { await autoUpdater.downloadUpdate(); return true } catch { return false }
+})
+
+ipcMain.handle('updater-install', () => {
+  if (!autoUpdater) return
+  autoUpdater.quitAndInstall(false, true)
+})
+
+ipcMain.handle('get-app-version', () => app.getVersion())
+
 app.whenReady().then(() => {
   try { registerAcceleratorIPC() } catch (err) { console.error("accelerator fallback:", err) }
+  setupAutoUpdater()
   createWindow()
 
   // Cold start deep link: check if app was launched via mikumod:// URL
