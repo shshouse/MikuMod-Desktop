@@ -96,21 +96,21 @@ export function SettingsPageEnhanced() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border/50">
-        <h2 className="text-xl font-semibold tracking-tight">偏好设置</h2>
-        <p className="text-sm text-muted-foreground mt-1">配置下载目录、接口来源和本地状态</p>
-        {savedMessage && <p className="text-xs text-green-400 mt-2">{savedMessage}</p>}
-      </div>
+    <div className="flex flex-col h-full overflow-y-auto">
+      <div className="p-5 space-y-4">
+        {/* Page header */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">偏好设置</h2>
+          {savedMessage && <span className="text-xs text-green-400">{savedMessage}</span>}
+        </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-8">
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium flex items-center gap-2 text-foreground/80">
+        {/* General config card */}
+        <div className="rounded-2xl bg-card overflow-hidden">
+          <div className="px-4 py-3 flex items-center gap-2 border-b border-border/50">
             <Settings2 className="w-4 h-4 text-blue-400" />
-            通用配置
-          </h3>
-
-          <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
+            <h3 className="text-sm font-medium">通用配置</h3>
+          </div>
+          <div className="divide-y divide-border/50">
             <div className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
               <div className="flex gap-4 items-center">
                 <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
@@ -151,16 +151,15 @@ export function SettingsPageEnhanced() {
               </div>
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* Auto-update section */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium flex items-center gap-2 text-foreground/80">
+        {/* Auto-update card */}
+        <div className="rounded-2xl bg-card overflow-hidden">
+          <div className="px-4 py-3 flex items-center gap-2 border-b border-border/50">
             <Sparkles className="w-4 h-4 text-purple-400" />
-            应用更新
-          </h3>
-
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <h3 className="text-sm font-medium">应用更新</h3>
+          </div>
+          <div className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground/90">当前版本</p>
@@ -171,7 +170,7 @@ export function SettingsPageEnhanced() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-2"
+                  className="h-8 gap-2 rounded-lg"
                   onClick={async () => {
                     setUpdateStatus("checking")
                     setUpdateError("")
@@ -204,7 +203,7 @@ export function SettingsPageEnhanced() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-2"
+                  className="h-8 gap-2 rounded-lg"
                   onClick={async () => {
                     setUpdateStatus("downloading")
                     await window.electronAPI?.updaterDownload?.()
@@ -225,7 +224,7 @@ export function SettingsPageEnhanced() {
               {updateStatus === "ready" && (
                 <Button
                   size="sm"
-                  className="h-8 gap-2"
+                  className="h-8 gap-2 rounded-lg"
                   onClick={() => window.electronAPI?.updaterInstall?.()}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
@@ -235,25 +234,27 @@ export function SettingsPageEnhanced() {
               {updateStatus === "error" && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-destructive">{updateError}</span>
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setUpdateStatus("idle")}>
+                  <Button variant="outline" size="sm" className="h-7 text-xs rounded-lg" onClick={() => setUpdateStatus("idle")}>
                     重试
                   </Button>
                 </div>
               )}
             </div>
           </div>
-        </section>
+        </div>
 
-        <section className="space-y-4 pt-4">
-          <h3 className="text-sm font-medium text-destructive/80 pl-1">危险操作</h3>
-
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 overflow-hidden divide-y divide-destructive/10">
+        {/* Danger zone card */}
+        <div className="rounded-2xl bg-destructive/5 border border-destructive/20 overflow-hidden">
+          <div className="px-4 py-3 border-b border-destructive/10">
+            <h3 className="text-sm font-medium text-destructive/80">危险操作</h3>
+          </div>
+          <div className="divide-y divide-destructive/10">
             <div className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground/90">清理本地缓存</p>
                 <p className="text-xs text-muted-foreground mt-0.5">清理下载队列、本地路径缓存和手动添加的游戏</p>
               </div>
-              <Button variant="outline" size="sm" className="h-8 gap-2 border-destructive/20 hover:bg-destructive/10 hover:text-destructive" onClick={clearLocalCache}>
+              <Button variant="outline" size="sm" className="h-8 gap-2 rounded-lg border-destructive/20 hover:bg-destructive/10 hover:text-destructive" onClick={clearLocalCache}>
                 <RefreshCcw className="w-3.5 h-3.5" />
                 清理
               </Button>
@@ -264,13 +265,13 @@ export function SettingsPageEnhanced() {
                 <p className="text-sm font-medium text-foreground/90">退出登录</p>
                 <p className="text-xs text-muted-foreground mt-0.5">断开当前账号与桌面端的会话</p>
               </div>
-              <Button variant="destructive" size="sm" className="h-8 gap-2" onClick={() => void logout()}>
+              <Button variant="destructive" size="sm" className="h-8 gap-2 rounded-lg" onClick={() => void logout()}>
                 <LogOut className="w-3.5 h-3.5" />
                 退出账号
               </Button>
             </div>
           </div>
-        </section>
+        </div>
       </div>
     </div>
   )

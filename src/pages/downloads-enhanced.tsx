@@ -15,29 +15,29 @@ export function DownloadsPageEnhanced() {
   const hasDownloading = downloads.some((item) => item.status === "downloading")
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border/50 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">任务列表</h2>
-          <p className="text-sm text-muted-foreground mt-1">管理正在下载和已下载的资源</p>
+    <div className="flex flex-col h-full overflow-y-auto">
+      <div className="p-5 space-y-4">
+        {/* Page header */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">任务列表</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="rounded-lg" onClick={() => store.toggleAll(hasDownloading)}>
+              {hasDownloading ? "全部暂停" : "全部继续"}
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-lg" onClick={() => store.clearDone()}>
+              清空已完成
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="h-8" onClick={() => store.toggleAll(hasDownloading)}>
-            {hasDownloading ? "全部暂停" : "全部继续"}
-          </Button>
-          <Button variant="outline" size="sm" className="h-8" onClick={() => store.clearDone()}>
-            清空已完成
-          </Button>
-        </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-3">
+        {/* Downloads list card */}
+        <div className="rounded-2xl bg-card p-4 space-y-2">
         {downloads.map((download) => {
           const cfg = statusConfig[download.status]
           const Icon = cfg.icon
 
           return (
-            <div key={download.id} className="group p-4 rounded-xl border border-border bg-card hover:border-blue-500/30 transition-all flex flex-col gap-3">
+            <div key={download.id} className="group p-3.5 rounded-xl bg-background border border-border/50 hover:border-blue-500/30 transition-all flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3.5">
                   <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
@@ -128,6 +128,7 @@ export function DownloadsPageEnhanced() {
             <p className="text-xs text-muted-foreground mt-1">去模组库挑一个模组开始下载</p>
           </div>
         )}
+        </div>
       </div>
     </div>
   )

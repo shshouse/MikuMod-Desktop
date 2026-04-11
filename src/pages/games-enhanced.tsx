@@ -149,114 +149,115 @@ export function GamesPageEnhanced({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="shrink-0 px-6 pt-6 pb-4 flex items-center justify-between border-b border-border/50">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">游戏管理</h2>
-          <p className="text-sm text-muted-foreground mt-1">绑定本地游戏目录，准备安装模组</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-2 shadow-sm rounded-full px-4" onClick={() => void handleAutoDetect()} disabled={isScanning}>
-            {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radar className="w-4 h-4" />}
-            {isScanning ? "检测中..." : "自动检测"}
-          </Button>
-          <Button size="sm" className="gap-2 shadow-sm rounded-full px-4" onClick={() => void handleManualAdd()}>
-            <Plus className="w-4 h-4" />
-            手动添加
-          </Button>
-        </div>
-      </div>
-
-      {scanResult && (
-        <div className="shrink-0 mx-6 mt-4 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400 flex items-center gap-2 animate-in fade-in">
-          <Radar className="w-4 h-4 shrink-0" />
-          <span>{scanResult}</span>
-          <button className="ml-auto text-blue-400/60 hover:text-blue-400 transition-colors" onClick={() => setScanResult(null)}>
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-6">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
-            <Search className="w-8 h-8 animate-pulse" />
-            <p className="text-sm">正在加载支持的游戏...</p>
+    <div className="flex flex-col h-full overflow-y-auto">
+      <div className="p-5 space-y-4">
+        {/* Page header */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">游戏管理</h2>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-2 rounded-lg" onClick={() => void handleAutoDetect()} disabled={isScanning}>
+              {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radar className="w-4 h-4" />}
+              {isScanning ? "检测中..." : "自动检测"}
+            </Button>
+            <Button size="sm" className="gap-2 rounded-lg" onClick={() => void handleManualAdd()}>
+              <Plus className="w-4 h-4" />
+              手动添加
+            </Button>
           </div>
-        ) : mergedGames.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
-            <Gamepad2 className="w-12 h-12 text-muted-foreground/30 mb-2" />
-            <p className="text-sm">没有匹配的游戏</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {mergedGames.map((game) => {
-              const localPath = localPaths[game.id]
-              const coverImage = game.images?.[0]
-              return (
-                <div
-                  key={game.id}
-                  className="group flex flex-col gap-0 rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 hover:shadow-md hover:shadow-blue-500/5 transition-all"
-                >
-                  <div className="h-24 bg-muted relative overflow-hidden flex items-center justify-center">
-                    {coverImage ? (
-                      <img src={coverImage} alt={game.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    ) : (
-                      <Gamepad2 className="w-8 h-8 text-muted-foreground/30" />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                  </div>
-                  <div className="p-4 flex flex-col flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className="text-base font-semibold text-foreground/90 group-hover:text-blue-400 transition-colors line-clamp-1">
-                          {game.name}
-                        </h3>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          {game.source === "local" ? "本地手动添加" : "平台支持游戏"}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="icon" className="shrink-0 -mr-2 -mt-2 opacity-50 hover:opacity-100" onClick={() => void openGameFolder(game.id)}>
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </div>
+        </div>
 
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      {localPath ? (
-                        <button
-                          className="flex items-center gap-1.5 text-green-500/90 cursor-pointer hover:text-green-400 transition-colors"
-                          onClick={() => void openGameFolder(game.id)}
-                        >
-                          <FolderOpen className="w-3.5 h-3.5" />
-                          <span className="truncate" title={localPath}>{localPath}</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-muted-foreground/60">
-                          <FolderOpen className="w-3.5 h-3.5" />
-                          <span>尚未设置游戏路径</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-auto pt-4 flex items-center justify-between">
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground inline-flex">
-                        平台模组数 {game.mod_count || 0}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant={localPath ? "outline" : "secondary"}
-                        className="h-7 text-[11px] px-3 rounded-full"
-                        onClick={() => void (localPath ? openGameFolder(game.id) : handleSetPath(game.id))}
-                      >
-                        {localPath ? "打开目录" : "设置路径"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+        {scanResult && (
+          <div className="px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400 flex items-center gap-2">
+            <Radar className="w-4 h-4 shrink-0" />
+            <span>{scanResult}</span>
+            <button className="ml-auto text-blue-400/60 hover:text-blue-400 transition-colors" onClick={() => setScanResult(null)}>
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
+
+        {/* Games grid card */}
+        <div className="rounded-2xl bg-card p-4">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+              <Search className="w-8 h-8 animate-pulse" />
+              <p className="text-sm">正在加载支持的游戏...</p>
+            </div>
+          ) : mergedGames.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+              <Gamepad2 className="w-12 h-12 text-muted-foreground/30 mb-2" />
+              <p className="text-sm">没有匹配的游戏</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {mergedGames.map((game) => {
+                const localPath = localPaths[game.id]
+                const coverImage = game.images?.[0]
+                return (
+                  <div
+                    key={game.id}
+                    className="group flex flex-col rounded-xl border border-border/50 bg-background overflow-hidden hover:border-blue-500/30 transition-all"
+                  >
+                    <div className="h-24 bg-muted relative overflow-hidden flex items-center justify-center">
+                      {coverImage ? (
+                        <img src={coverImage} alt={game.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ) : (
+                        <Gamepad2 className="w-8 h-8 text-muted-foreground/30" />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    </div>
+                    <div className="p-3.5 flex flex-col flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h3 className="text-sm font-semibold text-foreground/90 group-hover:text-blue-400 transition-colors line-clamp-1">
+                            {game.name}
+                          </h3>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {game.source === "local" ? "本地手动添加" : "平台支持游戏"}
+                          </p>
+                        </div>
+                        <Button variant="ghost" size="icon" className="shrink-0 -mr-2 -mt-1 opacity-50 hover:opacity-100 h-7 w-7" onClick={() => void openGameFolder(game.id)}>
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </div>
+
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {localPath ? (
+                          <button
+                            className="flex items-center gap-1.5 text-green-500/90 cursor-pointer hover:text-green-400 transition-colors"
+                            onClick={() => void openGameFolder(game.id)}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            <span className="truncate" title={localPath}>{localPath}</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-muted-foreground/60">
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            <span>尚未设置游戏路径</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-auto pt-3 flex items-center justify-between">
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground">
+                          模组 {game.mod_count || 0}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={localPath ? "outline" : "secondary"}
+                          className="h-7 text-[11px] px-3 rounded-lg"
+                          onClick={() => void (localPath ? openGameFolder(game.id) : handleSetPath(game.id))}
+                        >
+                          {localPath ? "打开目录" : "设置路径"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
