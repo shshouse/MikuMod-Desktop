@@ -68,6 +68,12 @@ export function DownloadsPageEnhanced() {
                     {cfg.label}
                   </span>
 
+                  {download.installing ? (
+                    <span className="text-[11px] font-medium mr-2 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
+                      安装中
+                    </span>
+                  ) : null}
+
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {download.status === "done" && download.savePath && !download.installed ? (
                       <Button
@@ -117,6 +123,9 @@ export function DownloadsPageEnhanced() {
               )}
 
               {download.error && <p className="text-xs text-destructive">{download.error}</p>}
+              {download.installed && download.conflicts && download.conflicts.length > 0 ? (
+                <p className="text-xs text-yellow-500">安装完成，存在 {download.conflicts.length} 个冲突文件，已按后安装优先覆盖</p>
+              ) : null}
             </div>
           )
         })}

@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from "react"
 import { getDesktopSettings } from "@/lib/desktop-config"
+import { importDownloadedMod, installManagedMod } from "@/lib/mod-manager"
 
 export interface DownloadTask {
   id: string
   name: string
+  gameId?: string
   game: string
   url: string
   fileName?: string
@@ -13,8 +15,15 @@ export interface DownloadTask {
   speed?: string
   savePath?: string
   error?: string
+  imported?: boolean
+  managedModId?: string
   installed?: boolean
   installedPath?: string
+  platformModId?: string
+  platformVersionId?: string
+  autoInstallGamePath?: string
+  conflicts?: string[]
+  installing?: boolean
 }
 
 class DownloadStoreEnhanced {
@@ -25,6 +34,7 @@ class DownloadStoreEnhanced {
   constructor() {
     if (typeof window !== "undefined" && window.electronAPI) {
       window.electronAPI.onDownloadEvent((data) => {
+        const previous = this.tasks.find((item) => item.id === data.id)
         this.updateTask(data.id, {
           status: data.status,
           progress: data.percent || 0,
@@ -32,6 +42,10 @@ class DownloadStoreEnhanced {
           error: data.error,
           speed: this.computeSpeed(data.id, data.receivedBytes),
         })
+
+        if (data.status === "done" && previous?.autoInstallGamePath && !previous.installed && !previous.installing) {
+          void this.installToGame(data.id, previous.autoInstallGamePath)
+        }
       })
     }
   }
@@ -79,22 +93,25 @@ class DownloadStoreEnhanced {
     this.tasks.push({
       id: task.id,
       name: task.name || "Unknown",
+      gameId: task.gameId,
       game: task.game || "Unknown",
       url: task.url,
       fileName: task.fileName,
       size: task.size || "Unknown",
       status: "downloading",
       progress: 0,
+      platformModId: task.platformModId,
+      platformVersionId: task.platformVersionId,
+      autoInstallGamePath: task.autoInstallGamePath,
     })
     this.emit()
 
     if (typeof window !== "undefined" && window.electronAPI) {
-      // 按游戏名分子目录：{appDir}/game/{gameName}/
       const gameName = (task.game || "Unknown").replace(/[\\/:*?"<>|]/g, "_")
       let saveDir: string
       try {
         const appDir = await window.electronAPI.getAppDir()
-        saveDir = `${appDir}\\mods\\${gameName}`
+        saveDir = `${appDir}\\mods\\${gameName}\\_system\\downloads`
       } catch {
         saveDir = `${getDesktopSettings().downloadDirectory}\\mods\\${gameName}`
       }
@@ -164,29 +181,55 @@ class DownloadStoreEnhanced {
     if (!task?.savePath || task.status !== "done") return false
 
     try {
-      const api = window.electronAPI
-      if (!api) return false
-
-      const fileName = task.savePath.replace(/^.*[\\/]/, "")
-      const destPath = `${gamePath}\\Mods\\${fileName}`
-
-      const exists = await api.fileExists(task.savePath)
+      const exists = await window.electronAPI?.fileExists(task.savePath)
       if (!exists) {
         this.updateTask(id, { error: "下载文件不存在" })
         return false
       }
 
-      const ok = await api.copyFile(task.savePath, destPath)
-      if (!ok) {
-        this.updateTask(id, { error: "安装失败：文件复制出错" })
+      const gameId = task.gameId || `custom:${task.game}`
+      this.updateTask(id, { installing: true, error: undefined })
+
+      const imported = task.managedModId
+        ? { id: task.managedModId }
+        : await importDownloadedMod({
+            gameId,
+            gameName: task.game,
+            sourcePath: task.savePath,
+            sourceType: "download",
+            modName: task.name,
+            platformModId: task.platformModId,
+            platformVersionId: task.platformVersionId,
+            downloadId: task.id,
+            fileName: task.fileName,
+          })
+
+      const result = await installManagedMod({
+        gameId,
+        gameName: task.game,
+        modId: imported.id,
+        gamePath,
+      })
+
+      if (!result.ok) {
+        this.updateTask(id, { installing: false, error: result.error || "安装失败" })
         return false
       }
 
-      this.updateTask(id, { installed: true, installedPath: destPath })
+      this.updateTask(id, {
+        installing: false,
+        imported: true,
+        managedModId: imported.id,
+        installed: true,
+        installedPath: gamePath,
+        conflicts: result.conflicts,
+        error: undefined,
+      })
       this.emit()
       return true
     } catch (err) {
       console.error("installToGame error:", err)
+      this.updateTask(id, { installing: false, error: err instanceof Error ? err.message : "安装失败" })
       return false
     }
   }

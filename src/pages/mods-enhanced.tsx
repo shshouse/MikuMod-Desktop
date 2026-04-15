@@ -68,10 +68,12 @@ export function ModsPageEnhanced({ searchQuery, onNavigate }: ModsPageEnhancedPr
       useDownloadStoreEnhanced.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,
+        gameId: mod.game?.id || mod.game_id,
         game: mod.game?.name || "未知游戏",
         url: tokenInfo.url,
         fileName: tokenInfo.fileName,
         size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
+        platformModId: mod.id,
       })
     } catch (error: any) {
       alert(`下载请求失败: ${error.message}`)

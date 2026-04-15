@@ -7,15 +7,21 @@ import { CommunityFeed } from "@/pages/community-feed"
 import { GamesPageEnhanced } from "@/pages/games-enhanced"
 import { DownloadsPageEnhanced } from "@/pages/downloads-enhanced"
 import { SettingsPageEnhanced } from "@/pages/settings-enhanced"
-import { GameModsPage } from "@/pages/game-mods"
+import { GameModManagerPage } from "@/pages/game-mod-manager"
 import { fetchGames } from "@/lib/api"
 import { getCustomGames, getLocalGamePaths, saveLocalGamePaths } from "@/lib/desktop-config"
+import type { CustomGameEntry } from "@/lib/desktop-config"
 import { AcceleratorPage } from "@/pages/accelerator"
 import { ModDetailPage } from "@/pages/mod-detail"
 import { PostDetailPage } from "@/pages/post-detail"
 import { UserProfilePage } from "@/pages/user-profile"
 import { NotificationsPage } from "@/pages/notifications"
 import { ModderDashboard } from "@/pages/modder-dashboard"
+
+interface PlatformGameEntry {
+  id: string
+  name: string
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState("mods")
@@ -24,15 +30,13 @@ function App() {
   const [historyIndex, setHistoryIndex] = useState(0)
 
   // 提升游戏状态，供 Sidebar 使用
-  const [platformGames, setPlatformGames] = useState<any[]>([])
-  const [localPaths, setLocalPaths] = useState<Record<string, string>>({})
-  const [customGames, setCustomGames] = useState(getCustomGames())
+  const [platformGames, setPlatformGames] = useState<PlatformGameEntry[]>([])
+  const [localPaths, setLocalPaths] = useState<Record<string, string>>(getLocalGamePaths())
+  const [customGames, setCustomGames] = useState<CustomGameEntry[]>(getCustomGames())
 
   useEffect(() => {
-    setLocalPaths(getLocalGamePaths())
-    setCustomGames(getCustomGames())
     fetchGames()
-      .then((data) => setPlatformGames(data || []))
+      .then((data) => setPlatformGames((data as PlatformGameEntry[]) || []))
       .catch(() => setPlatformGames([]))
   }, [])
 
@@ -59,7 +63,7 @@ function App() {
   const canGoBack = historyIndex > 0
   const canGoForward = historyIndex < history.length - 1
 
-  const navigateTo = (tab: string) => {
+  const navigateTo = useCallback((tab: string) => {
     setActiveTab((currentTab) => {
       if (currentTab === tab) return currentTab
       setHistory((currentHistory) => {
@@ -70,21 +74,21 @@ function App() {
       })
       return tab
     })
-  }
+  }, [historyIndex])
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     if (!canGoBack) return
     const nextIndex = historyIndex - 1
     setHistoryIndex(nextIndex)
     setActiveTab(history[nextIndex])
-  }
+  }, [canGoBack, history, historyIndex])
 
-  const handleForward = () => {
+  const handleForward = useCallback(() => {
     if (!canGoForward) return
     const nextIndex = historyIndex + 1
     setHistoryIndex(nextIndex)
     setActiveTab(history[nextIndex])
-  }
+  }, [canGoForward, history, historyIndex])
 
   const currentPage = useMemo(() => {
     // mod:123 — in-app mod detail page
@@ -112,7 +116,7 @@ function App() {
         platformGames.find((g) => g.id === gameId) ||
         customGames.find((g) => g.id === gameId)
       return (
-        <GameModsPage
+        <GameModManagerPage
           gameId={gameId}
           gameName={game?.name ?? gameId}
           localPath={localPaths[gameId]}
@@ -150,7 +154,7 @@ function App() {
       default:
         return <ModsPageEnhanced searchQuery={searchQuery} onNavigate={navigateTo} />
     }
-  }, [activeTab, searchQuery, localPaths, customGames, platformGames, persistPaths, handleSetPath])
+  }, [activeTab, searchQuery, localPaths, customGames, platformGames, persistPaths, handleSetPath, navigateTo, handleBack])
 
   return (
     <div className="dark h-screen w-screen flex overflow-hidden bg-background text-foreground">

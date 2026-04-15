@@ -6,6 +6,7 @@ const util = require('util')
 // child_process exec 转 Promise
 const exec = util.promisify(require('child_process').exec)
 const { registerAcceleratorIPC, cleanupOnExit } = require('./accelerator.cjs')
+const { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod } = require('./mod-manager.cjs')
 
 // === Auto-update (electron-updater) ===
 let autoUpdater = null
@@ -189,6 +190,22 @@ ipcMain.handle('select-directory', async () => {
   }
 })
 
+ipcMain.handle('select-mod-file', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: '支持的压缩包', extensions: ['zip', '7z', 'rar', 'tar', 'gz', 'tgz'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    })
+    return result.canceled ? null : result.filePaths[0]
+  } catch (error) {
+    console.error('select-mod-file error:', error)
+    return null
+  }
+})
+
 // 打开目录 (限制在安全目录)
 ipcMain.handle('open-directory', async (_e, dirPath) => {
   try {
@@ -324,6 +341,51 @@ ipcMain.handle('delete-file', async (_e, filePath) => {
       console.error(`delete-file error (${filePath}):`, error)
     }
     return false
+  }
+})
+
+ipcMain.handle('managed-mods-list', async (_e, input) => {
+  try {
+    return await listManagedMods(app, input)
+  } catch (error) {
+    console.error('managed-mods-list error:', error)
+    throw new Error(error.message || '获取模组列表失败')
+  }
+})
+
+ipcMain.handle('managed-mods-import-external', async (_e, input) => {
+  try {
+    return await importExternalMod(app, input)
+  } catch (error) {
+    console.error('managed-mods-import-external error:', error)
+    throw new Error(error.message || '导入模组失败')
+  }
+})
+
+ipcMain.handle('managed-mods-import-download', async (_e, input) => {
+  try {
+    return await importDownloadedArchive(app, input)
+  } catch (error) {
+    console.error('managed-mods-import-download error:', error)
+    throw new Error(error.message || '导入下载模组失败')
+  }
+})
+
+ipcMain.handle('managed-mods-install', async (_e, input) => {
+  try {
+    return await installManagedMod(app, input)
+  } catch (error) {
+    console.error('managed-mods-install error:', error)
+    return { ok: false, error: error.message || '安装失败', conflicts: [], installedPaths: 0 }
+  }
+})
+
+ipcMain.handle('managed-mods-uninstall', async (_e, input) => {
+  try {
+    return await uninstallManagedMod(app, input)
+  } catch (error) {
+    console.error('managed-mods-uninstall error:', error)
+    return { ok: false, error: error.message || '卸载失败', restoredPaths: 0 }
   }
 })
 

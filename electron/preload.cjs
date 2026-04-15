@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 文件系统
   getAppDir: () => ipcRenderer.invoke('get-app-dir'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
+  selectModFile: () => ipcRenderer.invoke('select-mod-file'),
   openDirectory: (path) => ipcRenderer.invoke('open-directory', path),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   httpRequest: (url, options) => ipcRenderer.invoke('http-request', url, options),
@@ -46,6 +47,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pauseDownload: (id) => ipcRenderer.invoke('pause-download', id),
   resumeDownload: (id) => ipcRenderer.invoke('resume-download', id),
   cancelDownload: (id) => ipcRenderer.invoke('cancel-download', id),
+  listManagedMods: (input) => ipcRenderer.invoke('managed-mods-list', input),
+  importExternalMod: (input) => ipcRenderer.invoke('managed-mods-import-external', input),
+  importDownloadedMod: (input) => ipcRenderer.invoke('managed-mods-import-download', input),
+  installManagedMod: (input) => ipcRenderer.invoke('managed-mods-install', input),
+  uninstallManagedMod: (input) => ipcRenderer.invoke('managed-mods-uninstall', input),
 
   // 加速器
   acceleratorStatus: () => ipcRenderer.invoke('accelerator-status'),
