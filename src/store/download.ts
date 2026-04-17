@@ -20,8 +20,8 @@ class DownloadStore {
 
   constructor() {
     // Listen to IPC events 
-    if (typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.onDownloadEvent((data: any) => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      window.electronAPI.onDownloadEvent((data) => {
         this.updateTask(data.id, {
           status: data.status,
           progress: data.percent || 0,
@@ -59,8 +59,8 @@ class DownloadStore {
     this.emit()
 
     // Start IPC download
-    if (typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.startDownload(task.url, task.id, task.fileName)
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      void window.electronAPI.startDownload(task.url, task.id, task.fileName)
     }
   }
 
@@ -73,20 +73,20 @@ class DownloadStore {
   }
 
   pause(id: string) {
-    if (typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.pauseDownload(id)
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      void window.electronAPI.pauseDownload(id)
     }
   }
 
   resume(id: string) {
-    if (typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.resumeDownload(id)
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      void window.electronAPI.resumeDownload(id)
     }
   }
 
   cancel(id: string) {
-    if (typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.cancelDownload(id)
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      void window.electronAPI.cancelDownload(id)
     }
     this.tasks = this.tasks.filter(t => t.id !== id)
     this.emit()

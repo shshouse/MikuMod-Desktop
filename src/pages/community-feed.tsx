@@ -1,9 +1,10 @@
-import { Clock, ExternalLink, Image as ImageIcon, Loader2, MessageSquare, ThumbsUp, User } from "lucide-react"
+import { Clock, ExternalLink, Loader2, MessageSquare, ThumbsUp, User } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { fetchPosts } from "@/lib/api"
+import type { CommunityPostSummary } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
 
 interface CommunityFeedProps {
@@ -24,7 +25,7 @@ const categoryColors: Record<string, string> = {
 }
 
 export function CommunityFeed({ searchQuery, onNavigate }: CommunityFeedProps) {
-  const [posts, setPosts] = useState<any[]>([])
+  const [posts, setPosts] = useState<CommunityPostSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -128,7 +129,7 @@ export function CommunityFeed({ searchQuery, onNavigate }: CommunityFeedProps) {
 
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${categoryColors[post.category] || "bg-muted text-muted-foreground"}`}>
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${categoryColors[post.category || "默认"] || "bg-muted text-muted-foreground"}`}>
                           {post.category || "默认"}
                         </span>
                         <button className="text-left min-w-0" onClick={() => void openPost(post.id)}>

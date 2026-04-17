@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react"
+import type { DownloadResumeData } from "@/types/electron"
 import { getDesktopSettings } from "@/lib/desktop-config"
 import { importDownloadedMod, installManagedMod } from "@/lib/mod-manager"
+import { logger } from "@/lib/logger"
 
 export interface DownloadTask {
   id: string
@@ -24,29 +26,147 @@ export interface DownloadTask {
   autoInstallGamePath?: string
   conflicts?: string[]
   installing?: boolean
+  resumeData?: DownloadResumeData
+  manuallyPaused?: boolean
+}
+
+const TASKS_STORAGE_KEY = "mikumod_desktop_download_tasks"
+
+function normalizeResumeData(value: unknown): DownloadResumeData | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined
+  }
+
+  const candidate = value as Partial<DownloadResumeData>
+  if (typeof candidate.path !== "string" || !Array.isArray(candidate.urlChain) || typeof candidate.offset !== "number" || typeof candidate.length !== "number") {
+    return undefined
+  }
+
+  const urlChain = candidate.urlChain.filter((item): item is string => typeof item === "string" && item.length > 0)
+  if (urlChain.length === 0) {
+    return undefined
+  }
+
+  return {
+    path: candidate.path,
+    urlChain,
+    offset: candidate.offset,
+    length: candidate.length,
+    mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : undefined,
+    lastModified: typeof candidate.lastModified === "string" ? candidate.lastModified : undefined,
+    eTag: typeof candidate.eTag === "string" ? candidate.eTag : undefined,
+    startTime: typeof candidate.startTime === "number" ? candidate.startTime : undefined,
+  }
+}
+
+function normalizePersistedTask(task: Partial<DownloadTask>): DownloadTask {
+  const resumeData = normalizeResumeData(task.resumeData)
+  const manuallyPaused = task.manuallyPaused === true
+  const interrupted = task.status === "downloading" || task.status === "paused" || task.installing === true
+  const recoverable = interrupted && !!resumeData
+  return {
+    id: task.id || "",
+    name: task.name || "Unknown",
+    gameId: task.gameId,
+    game: task.game || "Unknown",
+    url: task.url || "",
+    fileName: task.fileName,
+    size: task.size || "Unknown",
+    status: recoverable ? "paused" : (interrupted ? "error" : (task.status === "done" || task.status === "error" ? task.status : "error")),
+    progress: typeof task.progress === "number" ? task.progress : 0,
+    speed: interrupted ? undefined : task.speed,
+    savePath: typeof task.savePath === "string" ? task.savePath : resumeData?.path,
+    error: recoverable ? undefined : (interrupted ? (task.error || "应用已重启，任务未自动恢复，请重新开始下载") : task.error),
+    imported: task.imported,
+    managedModId: task.managedModId,
+    installed: task.installed,
+    installedPath: task.installedPath,
+    platformModId: task.platformModId,
+    platformVersionId: task.platformVersionId,
+    autoInstallGamePath: task.autoInstallGamePath,
+    conflicts: Array.isArray(task.conflicts) ? task.conflicts.filter((item): item is string => typeof item === "string") : undefined,
+    installing: false,
+    resumeData,
+    manuallyPaused: recoverable && manuallyPaused ? true : undefined,
+  }
+}
+
+function persistTasks(tasks: DownloadTask[]) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  if (tasks.length === 0) {
+    window.localStorage.removeItem(TASKS_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
+}
+
+function recoverTasks(): DownloadTask[] {
+  if (typeof window === "undefined") {
+    return []
+  }
+
+  const storedTasks = window.localStorage.getItem(TASKS_STORAGE_KEY)
+  if (!storedTasks) return []
+  try {
+    const parsed = JSON.parse(storedTasks)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed
+      .map((item) => normalizePersistedTask(item as Partial<DownloadTask>))
+      .filter((item) => Boolean(item.id && item.url))
+  } catch {
+    return []
+  }
 }
 
 class DownloadStoreEnhanced {
-  private tasks: DownloadTask[] = []
+  private tasks: DownloadTask[] = recoverTasks()
   private listeners = new Set<() => void>()
   private lastProgressMap = new Map<string, { bytes: number; time: number }>()
+
+  private autoResumeRecoverableTasks() {
+    if (typeof window === "undefined" || !window.electronAPI) {
+      return
+    }
+
+    for (const task of this.tasks) {
+      if (task.status === "paused" && task.resumeData && task.manuallyPaused !== true) {
+        void window.electronAPI.resumeDownload(task.id, task.resumeData)
+      }
+    }
+  }
 
   constructor() {
     if (typeof window !== "undefined" && window.electronAPI) {
       window.electronAPI.onDownloadEvent((data) => {
         const previous = this.tasks.find((item) => item.id === data.id)
+        if (data.status !== "downloading") {
+          this.lastProgressMap.delete(data.id)
+        }
+
         this.updateTask(data.id, {
           status: data.status,
-          progress: data.percent || 0,
-          savePath: data.savePath,
-          error: data.error,
-          speed: this.computeSpeed(data.id, data.receivedBytes),
+          progress: typeof data.percent === "number" ? data.percent : (previous?.progress || 0),
+          savePath: data.savePath ?? previous?.savePath,
+          error: data.status === "error" ? data.error : undefined,
+          speed: data.status === "downloading" ? this.computeSpeed(data.id, data.receivedBytes) : undefined,
+          resumeData: data.status === "done" ? undefined : (data.resumeData ?? previous?.resumeData),
+          manuallyPaused: data.status === "paused"
+            ? previous?.manuallyPaused === true
+            : undefined,
         })
 
         if (data.status === "done" && previous?.autoInstallGamePath && !previous.installed && !previous.installing) {
           void this.installToGame(data.id, previous.autoInstallGamePath)
         }
       })
+
+      this.autoResumeRecoverableTasks()
     }
   }
 
@@ -59,6 +179,7 @@ class DownloadStoreEnhanced {
 
   private emit() {
     this.tasks = [...this.tasks]
+    persistTasks(this.tasks)
     this.listeners.forEach((listener) => listener())
   }
 
@@ -103,6 +224,8 @@ class DownloadStoreEnhanced {
       platformModId: task.platformModId,
       platformVersionId: task.platformVersionId,
       autoInstallGamePath: task.autoInstallGamePath,
+      resumeData: task.resumeData,
+      manuallyPaused: task.manuallyPaused,
     })
     this.emit()
 
@@ -130,11 +253,15 @@ class DownloadStoreEnhanced {
   }
 
   pause(id: string) {
+    this.lastProgressMap.delete(id)
+    this.updateTask(id, { status: "paused", speed: undefined, manuallyPaused: true })
     void window.electronAPI?.pauseDownload(id)
   }
 
   resume(id: string) {
-    void window.electronAPI?.resumeDownload(id)
+    const task = this.tasks.find((item) => item.id === id)
+    this.updateTask(id, { status: "downloading", error: undefined, manuallyPaused: undefined })
+    void window.electronAPI?.resumeDownload(id, task?.resumeData)
   }
 
   cancel(id: string) {
@@ -183,7 +310,7 @@ class DownloadStoreEnhanced {
     try {
       const exists = await window.electronAPI?.fileExists(task.savePath)
       if (!exists) {
-        this.updateTask(id, { error: "下载文件不存在" })
+        this.updateTask(id, { status: "error", installing: false, error: "下载文件不存在" })
         return false
       }
 
@@ -228,7 +355,14 @@ class DownloadStoreEnhanced {
       this.emit()
       return true
     } catch (err) {
-      console.error("installToGame error:", err)
+      logger.error("installToGame failed", {
+        code: "DL-1001",
+        download_id: id,
+        game_id: task.gameId || `custom:${task.game}`,
+        game_name: task.game,
+        game_path: gamePath,
+        save_path: task.savePath,
+      }, err)
       this.updateTask(id, { installing: false, error: err instanceof Error ? err.message : "安装失败" })
       return false
     }

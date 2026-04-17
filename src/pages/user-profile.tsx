@@ -10,8 +10,8 @@ import {
 import { useEffect, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
-import { Button } from "@/components/ui/button"
 import { fetchUserProfile } from "@/lib/api"
+import type { UserProfileModSummary, UserProfilePostSummary, UserProfileResponse, UserProfileReviewSummary } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 interface UserProfilePageProps {
@@ -19,18 +19,40 @@ interface UserProfilePageProps {
   onNavigate: (tab: string) => void
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "加载用户资料失败"
+}
+
 export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps) {
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<UserProfileResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
 
   useEffect(() => {
-    setIsLoading(true)
-    setError("")
+    let isActive = true
     fetchUserProfile(userNumber)
-      .then((result) => setData(result))
-      .catch((err) => setError(err.message))
-      .finally(() => setIsLoading(false))
+      .then((result) => {
+        if (!isActive) {
+          return
+        }
+        setData(result)
+      })
+      .catch((err) => {
+        if (!isActive) {
+          return
+        }
+        setError(getErrorMessage(err))
+      })
+      .finally(() => {
+        if (!isActive) {
+          return
+        }
+        setIsLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
   }, [userNumber])
 
   if (isLoading) {
@@ -51,7 +73,13 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
     )
   }
 
-  const { profile, stats, recentPosts, recentReviews, recentMods } = data
+  const {
+    profile,
+    stats,
+    recentPosts = [],
+    recentReviews = [],
+    recentMods = [],
+  } = data
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -105,7 +133,7 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
               发布的模组
             </h3>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-              {recentMods.map((mod: any) => (
+              {recentMods.map((mod: UserProfileModSummary) => (
                 <button
                   key={mod.id}
                   className="rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 transition-all text-left group"
@@ -142,7 +170,7 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
               最近帖子
             </h3>
             <div className="space-y-2">
-              {recentPosts.map((post: any) => (
+              {recentPosts.map((post: UserProfilePostSummary) => (
                 <button
                   key={post.id}
                   className="w-full text-left p-3 rounded-xl border border-border bg-card hover:border-blue-500/30 transition-all flex items-center justify-between"
@@ -175,7 +203,7 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
               最近评测
             </h3>
             <div className="space-y-2">
-              {recentReviews.map((review: any) => (
+              {recentReviews.map((review: UserProfileReviewSummary) => (
                 <button
                   key={review.id}
                   className="w-full text-left p-4 rounded-xl border border-border bg-card hover:border-blue-500/30 transition-all"

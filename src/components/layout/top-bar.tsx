@@ -10,7 +10,7 @@ import {
   Loader2,
   LogOut
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { fetchMyProfile, fetchUnreadNotifications } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,15 @@ export function TopBar({ onNavigate }: TopBarProps) {
   // Notification State
   const [unreadCount, setUnreadCount] = useState(0)
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      const count = await fetchUnreadNotifications()
+      setUnreadCount(count || 0)
+    } catch (error) {
+      console.error(error)
+    }
+  }, [])
+
   useEffect(() => {
     async function getUser() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -43,7 +52,7 @@ export function TopBar({ onNavigate }: TopBarProps) {
         } catch (e) {
           console.error(e)
         }
-        fetchNotifications(session.user.id)
+        void loadNotifications()
       }
     }
     
@@ -57,7 +66,7 @@ export function TopBar({ onNavigate }: TopBarProps) {
         } catch (e) {
           console.error(e)
         }
-        fetchNotifications(session.user.id)
+        void loadNotifications()
         setShowLoginModal(false)
       } else if (event === "SIGNED_OUT") {
         setUserProfile(null)
@@ -66,16 +75,7 @@ export function TopBar({ onNavigate }: TopBarProps) {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
-
-  const fetchNotifications = async (_userId: string) => {
-    try {
-      const count = await fetchUnreadNotifications()
-      setUnreadCount(count || 0)
-    } catch (e) {
-      console.error(e)
-    }
-  }
+  }, [loadNotifications])
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

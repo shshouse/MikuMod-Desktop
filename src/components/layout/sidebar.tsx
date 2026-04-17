@@ -38,14 +38,14 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
   const resolvedActive = activeTab.startsWith("game:") ? "games" : activeTab
 
   return (
-    <aside className="w-16 shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
+    <aside className="w-48 shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
       {/* Logo 拖拽区，高度与 TopBar 对齐 */}
-      <div className="drag-region flex items-center justify-center h-14 border-b border-sidebar-border shrink-0">
-        <img src={logoImg} alt="MikuMod" className="h-5 no-drag invert brightness-200" />
+      <div className="drag-region flex items-center px-4 h-14 border-b border-sidebar-border shrink-0">
+        <img src={logoImg} alt="MikuMod" className="h-6 no-drag invert brightness-200" />
       </div>
 
       {/* Navigation - top */}
-      <nav className="flex-1 flex flex-col items-center pt-2 gap-0.5 overflow-y-auto">
+      <nav className="flex-1 flex flex-col px-3 pt-3 gap-1 overflow-y-auto">
         {topNavItems.map((item) => {
           const Icon = item.icon
           const isActive = resolvedActive === item.id
@@ -53,26 +53,30 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              title={item.label}
               className={cn(
-                "w-12 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-150",
+                "w-full h-9 flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 text-left",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >
-              <Icon className={cn("w-[18px] h-[18px]", isActive && "text-blue-400")} />
-              <span className={cn("text-[10px] leading-none", isActive ? "font-medium" : "font-normal")}>
+              <Icon className={cn("w-4 h-4 shrink-0", isActive && "text-blue-400")} />
+              <span className={cn("text-sm", isActive ? "font-medium" : "font-normal")}>
                 {item.label}
               </span>
             </button>
           )
         })}
 
-        {/* 已安装游戏 - 紧凑图标 */}
+        {/* 已安装游戏 */}
         {installedGames.length > 0 && (
           <>
-            <div className="w-8 h-px bg-sidebar-border my-1.5" />
+            <div className="h-px bg-sidebar-border my-2 mx-3" />
+            <div className="px-3 mb-1">
+              <span className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+                已安装游戏
+              </span>
+            </div>
             {installedGames.map((game) => {
               const tabId = `game:${game.id}`
               const isActive = activeTab === tabId
@@ -82,13 +86,16 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
                   onClick={() => onTabChange(tabId)}
                   title={game.name}
                   className={cn(
-                    "w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-150",
+                    "w-full h-8 flex items-center gap-2.5 px-3 py-1.5 rounded-xl transition-all duration-150 text-left",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/40 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground"
+                      : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground"
                   )}
                 >
-                  <Gamepad2 className={cn("w-4 h-4", isActive && "text-blue-400")} />
+                  <Gamepad2 className={cn("w-3.5 h-3.5 shrink-0", isActive && "text-blue-400")} />
+                  <span className={cn("text-xs truncate", isActive ? "font-medium" : "font-normal")}>
+                    {game.name}
+                  </span>
                 </button>
               )
             })}
@@ -97,7 +104,7 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
       </nav>
 
       {/* Navigation - bottom */}
-      <div className="flex flex-col items-center pb-3 gap-0.5">
+      <div className="flex flex-col px-3 pb-3 gap-1">
         {bottomNavItems.map((item) => {
           const Icon = item.icon
           const isActive = resolvedActive === item.id
@@ -105,16 +112,15 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              title={item.label}
               className={cn(
-                "w-12 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-150",
+                "w-full h-9 flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 text-left",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >
-              <Icon className={cn("w-[18px] h-[18px]", isActive && "text-blue-400")} />
-              <span className={cn("text-[10px] leading-none", isActive ? "font-medium" : "font-normal")}>
+              <Icon className={cn("w-4 h-4 shrink-0", isActive && "text-blue-400")} />
+              <span className={cn("text-sm", isActive ? "font-medium" : "font-normal")}>
                 {item.label}
               </span>
             </button>

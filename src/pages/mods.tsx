@@ -3,13 +3,18 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { fetchMods, getDownloadToken } from "@/lib/api"
+import type { SearchModSummary } from "@/lib/api"
 import { useDownloadStore } from "@/store/download" // We will create this next
 
 const categories = ["全部", "热门", "最新", "推荐"]
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误"
+}
+
 export function ModsPage() {
   const [activeCategory, setActiveCategory] = useState("全部")
-  const [mods, setMods] = useState<any[]>([])
+  const [mods, setMods] = useState<SearchModSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -30,7 +35,7 @@ export function ModsPage() {
     loadMods()
   }, [])
 
-  const startDownload = async (mod: any) => {
+  const startDownload = async (mod: SearchModSummary) => {
     try {
       // 1. Get download token via API
       const tokenInfo = await getDownloadToken(mod.id)
@@ -42,10 +47,10 @@ export function ModsPage() {
         game: mod.game?.name || '未知游戏',
         url: tokenInfo.url,
         fileName: tokenInfo.fileName,
-        size: (tokenInfo.fileSize / (1024 * 1024)).toFixed(2) + ' MB',
+        size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : '未知',
       })
-    } catch (e: any) {
-      alert(`下载请求失败: ${e.message}`)
+    } catch (error) {
+      alert(`下载请求失败: ${getErrorMessage(error)}`)
     }
   }
 
@@ -87,7 +92,7 @@ export function ModsPage() {
       <div className="shrink-0 px-6 pb-4 flex gap-4">
         {[
           { icon: TrendingUp, label: "当前展示", value: mods.length > 0 ? mods.length : "-" },
-          { icon: Clock, label: "最新上架", value: mods.length > 0 ? (new Date() > new Date(mods[0].created_at) ? "刚刚" : "24h内") : "-" },
+          { icon: Clock, label: "最新上架", value: mods.length > 0 ? (new Date() > new Date(mods[0].created_at || 0) ? "刚刚" : "24h内") : "-" },
           { icon: Star, label: "精选推荐", value: mods.filter(m => m.tags && m.tags.includes("精选")).length || "-" },
         ].map((stat) => (
           <div key={stat.label} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border">
@@ -113,7 +118,7 @@ export function ModsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {mods.map((mod: any) => (
+            {mods.map((mod) => (
               <div
                 key={mod.id}
                 className="group rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-200 cursor-pointer"

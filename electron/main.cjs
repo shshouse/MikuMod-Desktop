@@ -26,6 +26,8 @@ if (!gotLock) {
 
 let mainWindow = null
 const activeDownloads = new Map() // { id: DownloadItem }
+const pendingDownloadRequests = []
+let registeredDownloadSession = null
 
 // === Security: path & URL validation ===
 const ALLOWED_EXTERNAL_DOMAINS = new Set([
@@ -45,6 +47,45 @@ function isAllowedExternalUrl(url) {
     return false
   } catch {
     return false
+  }
+}
+
+function getRequestIdFromHeaders(headers) {
+  if (!headers || typeof headers !== 'object') return undefined
+  return headers['x-request-id'] || headers['X-Request-Id'] || undefined
+}
+
+function newRequestId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `r-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function writeStructuredLog(level, message, context, error) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    service: 'mikumod-desktop-main',
+    message,
+  }
+  if (context && Object.keys(context).length > 0) {
+    entry.context = context
+  }
+  if (error) {
+    entry.error = {
+      name: error.name || 'Error',
+      message: error.message || String(error),
+      stack: app.isPackaged ? undefined : error.stack,
+    }
+  }
+  const line = JSON.stringify(entry)
+  if (level === 'error') {
+    console.error(line)
+  } else if (level === 'warn') {
+    console.warn(line)
+  } else {
+    console.log(line)
   }
 }
 
@@ -84,6 +125,228 @@ function isPathAllowed(targetPath) {
   const normalized = path.normalize(path.resolve(targetPath))
   const baseDirs = getSafeBaseDirs()
   return baseDirs.some(base => normalized.startsWith(base + path.sep) || normalized === base)
+}
+
+function emitDownloadEvent(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('download-event', payload)
+  }
+}
+
+function enqueueDownloadRequest(request) {
+  pendingDownloadRequests.push(request)
+}
+
+function removePendingDownloadRequest(downloadId) {
+  const index = pendingDownloadRequests.findIndex((request) => request.downloadId === downloadId)
+  if (index !== -1) {
+    pendingDownloadRequests.splice(index, 1)
+  }
+}
+
+function takeDownloadRequest(item) {
+  const itemUrl = item.getURL()
+  const itemUrlChain = Array.isArray(item.getURLChain()) ? item.getURLChain() : []
+  const itemSavePath = item.getSavePath()
+
+  let index = pendingDownloadRequests.findIndex((request) => (
+    request.kind === 'resume'
+      && request.resumeData
+      && request.resumeData.path === itemSavePath
+  ))
+
+  if (index === -1) {
+    index = pendingDownloadRequests.findIndex((request) => (
+      request.kind === 'start'
+        && (request.url === itemUrl || itemUrlChain.includes(request.url))
+    ))
+  }
+
+  if (index === -1) {
+    index = pendingDownloadRequests.findIndex((request) => (
+      request.kind === 'resume'
+        && request.resumeData
+        && Array.isArray(request.resumeData.urlChain)
+        && request.resumeData.urlChain.some((url) => url === itemUrl || itemUrlChain.includes(url))
+    ))
+  }
+
+  if (index === -1 && pendingDownloadRequests.length === 1) {
+    index = 0
+  }
+
+  if (index === -1) {
+    return null
+  }
+
+  return pendingDownloadRequests.splice(index, 1)[0]
+}
+
+function getDownloadPercent(receivedBytes, totalBytes) {
+  if (!totalBytes || totalBytes <= 0) {
+    return 0
+  }
+
+  return Math.min(100, (receivedBytes / totalBytes) * 100)
+}
+
+function buildResumeData(item, fallbackData) {
+  const savePath = item.getSavePath() || fallbackData?.path
+  const currentUrlChain = item.getURLChain()
+  const urlChain = Array.isArray(currentUrlChain) && currentUrlChain.length > 0
+    ? currentUrlChain
+    : fallbackData?.urlChain
+  const length = item.getTotalBytes() || fallbackData?.length || 0
+  const offset = item.getReceivedBytes() || fallbackData?.offset || 0
+
+  if (!savePath || !Array.isArray(urlChain) || urlChain.length === 0 || !Number.isFinite(length) || length <= 0) {
+    return undefined
+  }
+
+  const mimeType = item.getMimeType() || fallbackData?.mimeType
+  const lastModified = item.getLastModifiedTime() || fallbackData?.lastModified
+  const eTag = item.getETag() || fallbackData?.eTag
+  const startTime = item.getStartTime() || fallbackData?.startTime
+
+  return {
+    path: savePath,
+    urlChain,
+    offset,
+    length,
+    ...(mimeType ? { mimeType } : {}),
+    ...(lastModified ? { lastModified } : {}),
+    ...(eTag ? { eTag } : {}),
+    ...(startTime ? { startTime } : {}),
+  }
+}
+
+function attachDownloadItem(item, request) {
+  const fallbackResumeData = request.kind === 'resume' ? request.resumeData : undefined
+
+  if (request.kind === 'start') {
+    const downloadDir = request.saveDir || path.join(app.getPath('downloads'), 'MikuMod')
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true })
+    }
+    item.setSavePath(path.join(downloadDir, request.fileName || item.getFilename()))
+  }
+
+  activeDownloads.set(request.downloadId, item)
+
+  const emitState = (status, extra = {}) => {
+    const receivedBytes = item.getReceivedBytes()
+    const totalBytes = item.getTotalBytes()
+    const resumeData = status === 'done' ? undefined : buildResumeData(item, fallbackResumeData)
+
+    emitDownloadEvent({
+      id: request.downloadId,
+      status,
+      receivedBytes,
+      totalBytes,
+      percent: status === 'done' ? 100 : getDownloadPercent(receivedBytes, totalBytes),
+      savePath: item.getSavePath(),
+      ...(resumeData ? { resumeData } : {}),
+      ...extra,
+    })
+  }
+
+  emitState(request.kind === 'resume' || item.isPaused() ? 'paused' : 'downloading')
+
+  item.on('updated', (_event, state) => {
+    if (state === 'interrupted') {
+      const resumeData = buildResumeData(item, fallbackResumeData)
+      if (item.canResume() && resumeData) {
+        emitState('paused')
+      } else {
+        emitDownloadEvent({
+          id: request.downloadId,
+          status: 'error',
+          error: '连接中断',
+          savePath: item.getSavePath(),
+          ...(resumeData ? { resumeData } : {}),
+        })
+      }
+      return
+    }
+
+    if (state === 'progressing') {
+      if (item.isPaused()) {
+        emitState('paused')
+      } else {
+        emitState('downloading')
+      }
+    }
+  })
+
+  item.once('done', (_event, state) => {
+    activeDownloads.delete(request.downloadId)
+
+    if (state === 'completed') {
+      emitDownloadEvent({ id: request.downloadId, status: 'done', percent: 100, savePath: item.getSavePath() })
+      return
+    }
+
+    if (state === 'cancelled') {
+      return
+    }
+
+    const resumeData = buildResumeData(item, fallbackResumeData)
+    if (resumeData) {
+      emitDownloadEvent({
+        id: request.downloadId,
+        status: 'paused',
+        receivedBytes: item.getReceivedBytes(),
+        totalBytes: item.getTotalBytes(),
+        percent: getDownloadPercent(item.getReceivedBytes(), item.getTotalBytes()),
+        savePath: item.getSavePath(),
+        resumeData,
+      })
+      return
+    }
+
+    emitDownloadEvent({ id: request.downloadId, status: 'error', error: `下载失败: ${state}`, savePath: item.getSavePath() })
+  })
+}
+
+function setupDownloadSessionHandlers(targetWindow) {
+  const targetSession = targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents.session : null
+  if (!targetSession || registeredDownloadSession === targetSession) {
+    return
+  }
+
+  registeredDownloadSession = targetSession
+  targetSession.on('will-download', (_event, item) => {
+    const request = takeDownloadRequest(item)
+    if (!request) {
+      return
+    }
+
+    try {
+      attachDownloadItem(item, request)
+
+      if (request.kind === 'resume' && request.autoResume) {
+        if (item.canResume()) {
+          item.resume()
+        } else {
+          activeDownloads.delete(request.downloadId)
+          emitDownloadEvent({
+            id: request.downloadId,
+            status: 'error',
+            error: '当前下载不支持断点恢复',
+            savePath: item.getSavePath() || request.resumeData?.path,
+            ...(request.resumeData ? { resumeData: request.resumeData } : {}),
+          })
+        }
+      }
+    } catch (error) {
+      activeDownloads.delete(request.downloadId)
+      emitDownloadEvent({
+        id: request.downloadId,
+        status: 'error',
+        error: error?.message || '下载任务初始化失败',
+      })
+    }
+  })
 }
 
 // === Steam 路径检测工具 (完全异步) ===
@@ -166,6 +429,8 @@ function createWindow() {
     }
     return { action: 'deny' }
   })
+
+  setupDownloadSessionHandlers(mainWindow)
 }
 
 // === IPC Handlers ===
@@ -234,21 +499,55 @@ ipcMain.handle('open-external', async (_e, url) => {
 
 // 请求安全代理与异常处理 (仅允许受信域名)
 ipcMain.handle('http-request', async (_e, url, options = {}) => {
+  const requestId = getRequestIdFromHeaders(options?.headers) || newRequestId()
   try {
-    if (!isAllowedHttpDomain(url)) {
-      console.warn(`http-request blocked: ${url}`)
-      return { ok: false, status: 403, text: 'Domain not allowed' }
+    const timeoutMs = typeof options?.timeoutMs === 'number' ? options.timeoutMs : 15000
+    const { timeoutMs: _timeoutMs, signal: _signal, ...requestOptions } = options || {}
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs)
+
+    requestOptions.headers = {
+      ...(requestOptions.headers || {}),
+      'x-request-id': requestId,
     }
-    const response = await fetch(url, options)
-    const text = await response.text()
-    return {
-      ok: response.ok,
-      status: response.status,
-      text,
+
+    if (!isAllowedHttpDomain(url)) {
+      writeStructuredLog('warn', 'http-request blocked', {
+        request_id: requestId,
+        code: 'HTTP-MAIN-1001',
+        url,
+      })
+      return { ok: false, status: 403, text: 'Domain not allowed', headers: { 'x-request-id': requestId } }
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...requestOptions,
+        signal: controller.signal,
+      })
+      const text = await response.text()
+      const responseRequestId = response.headers.get('x-request-id') || requestId
+      return {
+        ok: response.ok,
+        status: response.status,
+        text,
+        headers: { 'x-request-id': responseRequestId },
+      }
+    } finally {
+      clearTimeout(timeout)
     }
   } catch (error) {
-    console.error(`http-request failed for ${url}:`, error)
-    return { ok: false, status: 500, text: error.message }
+    writeStructuredLog('error', 'http-request failed', {
+      request_id: requestId,
+      code: 'HTTP-MAIN-1002',
+      url,
+    }, error)
+    return {
+      ok: false,
+      status: error?.name === 'AbortError' ? 504 : 500,
+      text: error?.message || 'Request failed',
+      headers: { 'x-request-id': requestId },
+    }
   }
 })
 
@@ -433,76 +732,90 @@ ipcMain.handle('scan-steam-games', async () => {
 })
 
 // === 下载管理 ===
-ipcMain.handle('start-download', async (event, url, downloadId, fileName, saveDir) => {
+ipcMain.handle('start-download', async (_event, url, downloadId, fileName, saveDir) => {
   try {
-    mainWindow?.webContents.downloadURL(url)
-    
-    mainWindow.webContents.session.once('will-download', (e, item, webContents) => {
-      try {
-        const downloadDir = saveDir || path.join(app.getPath('downloads'), 'MikuMod')
-        if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true })
-        
-        item.setSavePath(path.join(downloadDir, fileName || item.getFilename()))
-        activeDownloads.set(downloadId, item)
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('主窗口不可用，无法启动下载')
+    }
 
-        item.on('updated', (event, state) => {
-          if (state === 'interrupted') {
-            mainWindow?.webContents.send('download-event', { id: downloadId, status: 'error', error: '连接中断' })
-          } else if (state === 'progressing') {
-            if (item.isPaused()) {
-              mainWindow?.webContents.send('download-event', { id: downloadId, status: 'paused' })
-            } else {
-              mainWindow?.webContents.send('download-event', {
-                id: downloadId,
-                status: 'downloading',
-                receivedBytes: item.getReceivedBytes(),
-                totalBytes: item.getTotalBytes(),
-                percent: (item.getReceivedBytes() / item.getTotalBytes()) * 100
-              })
-            }
-          }
-        })
+    if (!isAllowedHttpDomain(url)) {
+      throw new Error('下载地址不在允许列表中')
+    }
 
-        item.once('done', (event, state) => {
-          activeDownloads.delete(downloadId)
-          if (state === 'completed') {
-            mainWindow?.webContents.send('download-event', { id: downloadId, status: 'done', savePath: item.getSavePath() })
-          } else {
-            mainWindow?.webContents.send('download-event', { id: downloadId, status: 'error', error: `下载失败: ${state}` })
-          }
-        })
-      } catch (err) {
-        console.error('will-download inner error:', err)
-        mainWindow?.webContents.send('download-event', { id: downloadId, status: 'error', error: err.message })
-      }
+    setupDownloadSessionHandlers(mainWindow)
+    enqueueDownloadRequest({
+      kind: 'start',
+      downloadId,
+      url,
+      fileName,
+      saveDir,
     })
+    mainWindow.webContents.downloadURL(url)
   } catch (error) {
     console.error('start-download invoke fallback:', error)
+    removePendingDownloadRequest(downloadId)
+    emitDownloadEvent({ id: downloadId, status: 'error', error: error?.message || '下载启动失败' })
   }
 })
 
-ipcMain.handle('pause-download', (e, downloadId) => {
+ipcMain.handle('pause-download', (_e, downloadId) => {
   try {
     const item = activeDownloads.get(downloadId)
     if (item && !item.isPaused()) item.pause()
-  } catch (err) {}
+  } catch {}
 })
 
-ipcMain.handle('resume-download', (e, downloadId) => {
+ipcMain.handle('resume-download', async (_e, downloadId, resumeData) => {
   try {
     const item = activeDownloads.get(downloadId)
-    if (item && item.canResume()) item.resume()
-  } catch (err) {}
+    if (item && item.canResume()) {
+      item.resume()
+      return
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('主窗口不可用，无法继续下载')
+    }
+
+    if (!resumeData || !resumeData.path || !Array.isArray(resumeData.urlChain) || resumeData.urlChain.length === 0) {
+      throw new Error('缺少可恢复的下载信息')
+    }
+
+    for (const resumeUrl of resumeData.urlChain) {
+      if (!isAllowedHttpDomain(resumeUrl)) {
+        throw new Error('恢复下载地址不在允许列表中')
+      }
+    }
+
+    setupDownloadSessionHandlers(mainWindow)
+    enqueueDownloadRequest({
+      kind: 'resume',
+      downloadId,
+      resumeData,
+      autoResume: true,
+    })
+    mainWindow.webContents.session.createInterruptedDownload(resumeData)
+  } catch (error) {
+    console.error('resume-download invoke fallback:', error)
+    removePendingDownloadRequest(downloadId)
+    emitDownloadEvent({
+      id: downloadId,
+      status: 'error',
+      error: error?.message || '下载恢复失败',
+      ...(resumeData ? { resumeData } : {}),
+    })
+  }
 })
 
-ipcMain.handle('cancel-download', (e, downloadId) => {
+ipcMain.handle('cancel-download', (_e, downloadId) => {
   try {
+    removePendingDownloadRequest(downloadId)
     const item = activeDownloads.get(downloadId)
     if (item) {
       item.cancel()
       activeDownloads.delete(downloadId)
     }
-  } catch (err) {}
+  } catch {}
 })
 
 // 窗口控制兜底

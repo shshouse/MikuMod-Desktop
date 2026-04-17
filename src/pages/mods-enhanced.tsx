@@ -1,7 +1,8 @@
-import { Clock, ExternalLink, Loader2, SlidersHorizontal, Star, TrendingUp } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { Clock, Loader2, SlidersHorizontal, Star, TrendingUp } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { fetchMods, getDownloadToken } from "@/lib/api"
+import type { SearchModSummary } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
 import { cn } from "@/lib/utils"
 import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
@@ -13,22 +14,20 @@ interface ModsPageEnhancedProps {
   onNavigate?: (tab: string) => void
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误"
+}
+
 export function ModsPageEnhanced({ searchQuery, onNavigate }: ModsPageEnhancedProps) {
   const [activeCategory, setActiveCategory] = useState<(typeof categories)[number]>("全部")
-  const [mods, setMods] = useState<any[]>([])
+  const [mods, setMods] = useState<SearchModSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const PAGE_SIZE = 24
 
-  useEffect(() => {
-    setPage(0)
-    setMods([])
-    loadMods(0)
-  }, [searchQuery])
-
-  async function loadMods(p: number) {
+  const loadMods = useCallback(async (p: number) => {
     if (p === 0) setIsLoading(true)
     else setLoadingMore(true)
     try {
@@ -47,7 +46,13 @@ export function ModsPageEnhanced({ searchQuery, onNavigate }: ModsPageEnhancedPr
       setIsLoading(false)
       setLoadingMore(false)
     }
-  }
+  }, [PAGE_SIZE, searchQuery])
+
+  useEffect(() => {
+    setPage(0)
+    setMods([])
+    void loadMods(0)
+  }, [loadMods])
 
   const filteredMods = useMemo(() => {
     switch (activeCategory) {
@@ -62,10 +67,10 @@ export function ModsPageEnhanced({ searchQuery, onNavigate }: ModsPageEnhancedPr
     }
   }, [activeCategory, mods])
 
-  const startDownload = async (mod: any) => {
+  const startDownload = async (mod: SearchModSummary) => {
     try {
       const tokenInfo = await getDownloadToken(mod.id)
-      useDownloadStoreEnhanced.getState().addDownload({
+      await useDownloadStoreEnhanced.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,
         gameId: mod.game?.id || mod.game_id,
@@ -75,8 +80,8 @@ export function ModsPageEnhanced({ searchQuery, onNavigate }: ModsPageEnhancedPr
         size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
         platformModId: mod.id,
       })
-    } catch (error: any) {
-      alert(`下载请求失败: ${error.message}`)
+    } catch (error) {
+      alert(`下载请求失败: ${getErrorMessage(error)}`)
     }
   }
 

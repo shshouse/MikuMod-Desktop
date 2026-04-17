@@ -1,24 +1,23 @@
 import { Download, FolderOpen, Loader2, LogOut, RefreshCcw, Server, Settings2, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { DEFAULT_SETTINGS, getDesktopSettings, saveDesktopSettings } from "@/lib/desktop-config"
+import { getDesktopSettings, saveDesktopSettings } from "@/lib/desktop-config"
+import type { ElectronAPI } from "@/types/electron"
 import { supabase } from "@/lib/supabase"
 import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
 
 export function SettingsPageEnhanced() {
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
+  const [settings, setSettings] = useState(() => getDesktopSettings())
   const [savedMessage, setSavedMessage] = useState("")
 
   // Auto-update state
   const [appVersion, setAppVersion] = useState("")
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "downloading" | "ready" | "not-available" | "error">("idle")
-  const [updateInfo, setUpdateInfo] = useState<any>(null)
+  const [updateInfo, setUpdateInfo] = useState<Awaited<ReturnType<ElectronAPI["updaterCheck"]>>["info"] | null>(null)
   const [updateProgress, setUpdateProgress] = useState(0)
   const [updateError, setUpdateError] = useState("")
 
   useEffect(() => {
-    setSettings(getDesktopSettings())
-
     // Get app version
     window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
 

@@ -2,6 +2,7 @@ import { ExternalLink, FolderOpen, Loader2, Package, Plus, TrendingUp } from "lu
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { fetchMods, getDownloadToken } from "@/lib/api"
+import type { SearchModSummary } from "@/lib/api"
 
 import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
 
@@ -13,31 +14,46 @@ interface GameModsPageProps {
   onNavigate: (tab: string) => void
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误"
+}
+
 export function GameModsPage({ gameId, gameName, localPath, onSetPath, onNavigate }: GameModsPageProps) {
-  const [mods, setMods] = useState<any[]>([])
+  const [mods, setMods] = useState<SearchModSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    setIsLoading(true)
-    fetchMods({ limit: 48 })
+    let isActive = true
+
+    void fetchMods({ limit: 48 })
       .then((data) => {
-        const all: any[] = data.mods || []
-        // 按 game.id 或 game_id 字段筛选当前游戏
+        if (!isActive) return
+        const all = data.mods || []
         const filtered = all.filter((m) => m.game?.id === gameId || m.game_id === gameId)
         setMods(filtered)
       })
-      .catch(() => setMods([]))
-      .finally(() => setIsLoading(false))
+      .catch(() => {
+        if (!isActive) return
+        setMods([])
+      })
+      .finally(() => {
+        if (!isActive) return
+        setIsLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
   }, [gameId])
 
   const openModDetail = (modNumber: string) => {
     onNavigate(`mod:${modNumber}`)
   }
 
-  const startDownload = async (mod: any) => {
+  const startDownload = async (mod: SearchModSummary) => {
     try {
       const tokenInfo = await getDownloadToken(mod.id)
-      useDownloadStoreEnhanced.getState().addDownload({
+      await useDownloadStoreEnhanced.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,
         game: gameName,
@@ -45,8 +61,8 @@ export function GameModsPage({ gameId, gameName, localPath, onSetPath, onNavigat
         fileName: tokenInfo.fileName,
         size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
       })
-    } catch (error: any) {
-      alert(`下载请求失败: ${error.message}`)
+    } catch (error) {
+      alert(`下载请求失败: ${getErrorMessage(error)}`)
     }
   }
 

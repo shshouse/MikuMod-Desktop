@@ -4,7 +4,6 @@ import {
   Loader2,
   Package,
   Plus,
-  User,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
@@ -13,13 +12,46 @@ import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { getDesktopSettings } from "@/lib/desktop-config"
 
+interface DashboardModSummary {
+  id: string
+  mod_number?: string
+  title: string
+  thumbnail_url?: string | null
+  status: string
+  download_count?: number | null
+  view_count?: number | null
+  created_at: string
+  game?: {
+    name?: string | null
+  } | null
+}
+
+interface DashboardModRow {
+  id: string
+  mod_number?: string
+  title: string
+  thumbnail_url?: string | null
+  status?: string | null
+  download_count?: number | null
+  view_count?: number | null
+  created_at: string
+  game?: Array<{
+    id?: string
+    name?: string | null
+  }> | null
+}
+
+interface SessionUser {
+  id: string
+}
+
 interface ModderDashboardProps {
   onNavigate: (tab: string) => void
 }
 
 export function ModderDashboard({ onNavigate }: ModderDashboardProps) {
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [myMods, setMyMods] = useState<any[]>([])
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
+  const [myMods, setMyMods] = useState<DashboardModSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -39,7 +71,18 @@ export function ModderDashboard({ onNavigate }: ModderDashboardProps) {
         .select("id,mod_number,title,thumbnail_url,status,download_count,view_count,created_at,game:games(id,name)")
         .eq("author_id", userId)
         .order("created_at", { ascending: false })
-      setMyMods(data || [])
+      const normalizedMods = ((data as DashboardModRow[] | null) || []).map((mod) => ({
+        id: mod.id,
+        mod_number: mod.mod_number,
+        title: mod.title,
+        thumbnail_url: mod.thumbnail_url,
+        status: mod.status || "draft",
+        download_count: mod.download_count,
+        view_count: mod.view_count,
+        created_at: mod.created_at,
+        game: Array.isArray(mod.game) ? (mod.game[0] || null) : (mod.game || null),
+      }))
+      setMyMods(normalizedMods)
     } catch {
       setMyMods([])
     } finally {

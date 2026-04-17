@@ -7,7 +7,6 @@ import {
   Loader2,
   MessageSquare,
   Package,
-  Star,
   ThumbsDown,
   ThumbsUp,
   TrendingUp,
@@ -18,6 +17,7 @@ import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { fetchModDetail, getDownloadToken, submitModReview } from "@/lib/api"
+import type { ModDetailResponse, ModReviewSummary, ModVersionSummary } from "@/lib/api"
 import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
@@ -28,8 +28,16 @@ interface ModDetailPageProps {
   onBack: () => void
 }
 
+interface SessionUser {
+  id: string
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误"
+}
+
 export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPageProps) {
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<ModDetailResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
   const [activeTab, setActiveTab] = useState<"description" | "versions" | "reviews">("description")
@@ -41,7 +49,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
   const [reviewContent, setReviewContent] = useState("")
   const [reviewPositive, setReviewPositive] = useState(true)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -50,27 +58,38 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
   }, [])
 
   useEffect(() => {
-    setIsLoading(true)
-    setError("")
-    fetchModDetail(modNumber)
+    let isActive = true
+
+    void fetchModDetail(modNumber)
       .then((result) => {
+        if (!isActive) return
         if (!result) {
           setError("模组不存在或未通过审核")
           return
         }
         setData(result)
-        if (result.versions?.length > 0) {
+        if (result.versions.length > 0) {
           setSelectedVersionId(result.versions[0].id)
         }
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setIsLoading(false))
+      .catch((fetchError) => {
+        if (!isActive) return
+        setError(getErrorMessage(fetchError))
+      })
+      .finally(() => {
+        if (!isActive) return
+        setIsLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
   }, [modNumber])
 
   const mod = data?.mod
-  const versions = data?.versions || []
-  const reviews = data?.reviews || []
-  const selectedVersion = versions.find((v: any) => v.id === selectedVersionId) || versions[0]
+  const versions: ModVersionSummary[] = data?.versions || []
+  const reviews: ModReviewSummary[] = data?.reviews || []
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) || versions[0]
 
   const screenshots = useMemo(() => {
     if (!mod) return []
@@ -80,15 +99,15 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
     return urls
   }, [mod])
 
-  const positiveCount = reviews.filter((r: any) => r.is_positive).length
-  const negativeCount = reviews.filter((r: any) => !r.is_positive).length
+  const positiveCount = reviews.filter((review) => review.is_positive).length
+  const negativeCount = reviews.filter((review) => !review.is_positive).length
 
   const startDownload = async () => {
     if (!mod) return
     setDownloading(true)
     try {
       const tokenInfo = await getDownloadToken(mod.mod_number, selectedVersionId || undefined)
-      useDownloadStoreEnhanced.getState().addDownload({
+      await useDownloadStoreEnhanced.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,
         gameId: mod.game?.id || mod.game_id,
@@ -99,8 +118,8 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
         platformModId: mod.id,
         platformVersionId: selectedVersion?.id,
       })
-    } catch (err: any) {
-      alert(`下载失败: ${err.message}`)
+    } catch (downloadError) {
+      alert(`下载失败: ${getErrorMessage(downloadError)}`)
     } finally {
       setDownloading(false)
     }
@@ -115,8 +134,8 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
       const refreshed = await fetchModDetail(modNumber)
       if (refreshed) setData(refreshed)
       setReviewContent("")
-    } catch (err: any) {
-      alert(`评测提交失败: ${err.message}`)
+    } catch (submitError) {
+      alert(`评测提交失败: ${getErrorMessage(submitError)}`)
     } finally {
       setReviewSubmitting(false)
     }
@@ -274,7 +293,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
 
           {activeTab === "versions" && (
             <div className="space-y-3">
-              {versions.map((version: any) => (
+              {versions.map((version) => (
                 <div
                   key={version.id}
                   className={cn(
@@ -350,7 +369,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
                 </div>
               )}
 
-              {reviews.map((review: any) => (
+              {reviews.map((review) => (
                 <div key={review.id} className="p-4 rounded-xl border border-border bg-card">
                   <div className="flex items-center justify-between">
                     <button

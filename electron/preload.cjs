@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   startDownload: (url, downloadId, fileName, saveDir) => ipcRenderer.invoke('start-download', url, downloadId, fileName, saveDir),
   pauseDownload: (id) => ipcRenderer.invoke('pause-download', id),
-  resumeDownload: (id) => ipcRenderer.invoke('resume-download', id),
+  resumeDownload: (id, resumeData) => ipcRenderer.invoke('resume-download', id, resumeData),
   cancelDownload: (id) => ipcRenderer.invoke('cancel-download', id),
   listManagedMods: (input) => ipcRenderer.invoke('managed-mods-list', input),
   importExternalMod: (input) => ipcRenderer.invoke('managed-mods-import-external', input),

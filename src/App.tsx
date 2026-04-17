@@ -94,19 +94,19 @@ function App() {
     // mod:123 — in-app mod detail page
     if (activeTab.startsWith("mod:")) {
       const modNumber = activeTab.slice(4)
-      return <ModDetailPage modNumber={modNumber} onNavigate={navigateTo} onBack={handleBack} />
+      return <ModDetailPage key={modNumber} modNumber={modNumber} onNavigate={navigateTo} onBack={handleBack} />
     }
 
     // post:123 — in-app post detail page
     if (activeTab.startsWith("post:")) {
       const postId = activeTab.slice(5)
-      return <PostDetailPage postId={postId} onNavigate={navigateTo} onBack={handleBack} />
+      return <PostDetailPage key={postId} postId={postId} onNavigate={navigateTo} onBack={handleBack} />
     }
 
     // user:123 — in-app user profile page
     if (activeTab.startsWith("user:")) {
       const userNumber = activeTab.slice(5)
-      return <UserProfilePage userNumber={userNumber} onNavigate={navigateTo} />
+      return <UserProfilePage key={userNumber} userNumber={userNumber} onNavigate={navigateTo} />
     }
 
     // game:uuid — game mods page

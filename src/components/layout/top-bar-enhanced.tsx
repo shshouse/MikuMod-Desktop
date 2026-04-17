@@ -8,7 +8,7 @@ import {
   Settings,
   User,
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { fetchMyProfile, fetchUnreadNotifications } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
 import { supabase } from "@/lib/supabase"
@@ -36,6 +36,15 @@ export function TopBarEnhanced({
 }: TopBarEnhancedProps) {
   const [userProfile, setUserProfile] = useState<{ username: string; avatar_url: string | null } | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
+
+  const loadNotifications = useCallback(async (isUnmounted = false) => {
+    try {
+      const count = await fetchUnreadNotifications()
+      if (!isUnmounted) setUnreadCount(count || 0)
+    } catch (error) {
+      console.error(error)
+    }
+  }, [])
 
   useEffect(() => {
     let unmounted = false
@@ -85,7 +94,7 @@ export function TopBarEnhanced({
       unmounted = true
       subscription.unsubscribe()
     }
-  }, [])
+  }, [loadNotifications])
 
   // Deep Link: handle auth callback from web login
   useEffect(() => {
@@ -109,28 +118,12 @@ export function TopBarEnhanced({
       }
     }
     
-    // 如果 preload 中定义了返回 cleanup 方法会接管
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cleanup = (window as any).electronAPI?.onDeepLink?.(handler)
+    window.electronAPI?.onDeepLink?.(handler)
 
     return () => {
       unmounted = true
-      if (typeof cleanup === 'function') {
-        cleanup()
-      } else if (typeof (window as any).electronAPI?.removeDeepLinkListener === 'function') {
-        (window as any).electronAPI.removeDeepLinkListener(handler)
-      }
     }
   }, [])
-
-  const loadNotifications = async (isUnmounted = false) => {
-    try {
-      const count = await fetchUnreadNotifications()
-      if (!isUnmounted) setUnreadCount(count || 0)
-    } catch (error) {
-      console.error(error)
-    }
-  }
 
   const handleLogin = async () => {
     const settings = getDesktopSettings()

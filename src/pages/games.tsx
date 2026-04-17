@@ -2,15 +2,16 @@ import { Gamepad2, FolderOpen, Plus, MoreHorizontal, Loader2 } from "lucide-reac
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 import { fetchGames as fetchGamesApi } from "@/lib/api"
+import type { GameSummary } from "@/lib/api"
 
 export function GamesPage() {
-  const [games, setGames] = useState<any[]>([])
+  const [games, setGames] = useState<GameSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [localPaths, setLocalPaths] = useState<Record<string, string>>({})
 
   const handleSetPath = async (gameId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const electronAPI = (window as any).electronAPI
+    const electronAPI = window.electronAPI
     if (electronAPI?.selectDirectory) {
       const selectedPath = await electronAPI.selectDirectory()
       if (selectedPath) {

@@ -1,4 +1,5 @@
 import { getDesktopSettings } from "./desktop-config"
+import { requestJson } from "./http"
 import { supabase } from './supabase'
 
 export function getApiBase() {
@@ -9,29 +10,97 @@ export function getApiBase() {
   return import.meta.env.VITE_API_BASE_URL || 'https://mikumod.com/api'
 }
 
-async function requestJson(url: string, options: RequestInit = {}) {
-  if (typeof window !== "undefined" && window.electronAPI?.httpRequest) {
-    const result = await window.electronAPI.httpRequest(url, options)
-    if (!result.ok) {
-      throw new Error(`HTTP error ${result.status}`)
-    }
-    return JSON.parse(result.text)
-  }
-
-  const res = await fetch(url, options)
-  if (!res.ok) {
-    throw new Error(`HTTP error ${res.status}`)
-  }
-  return res.json()
+export interface GameSummary {
+  id: string
+  name: string
+  game_number?: string
+  images?: string[]
+  mod_count?: number
+  steam_app_id?: string | null
 }
 
-export async function fetchMods(params: { q?: string; page?: number; limit?: number } = {}) {
+export interface ModAuthorSummary {
+  username?: string | null
+}
+
+export interface ModGameSummary {
+  id?: string
+  name?: string | null
+  game_number?: string
+}
+
+export interface SearchModSummary {
+  id: string
+  title: string
+  mod_number?: string
+  game?: ModGameSummary | null
+  game_id?: string
+  author?: ModAuthorSummary | null
+  thumbnail_url?: string | null
+  download_count?: number
+  created_at?: string | null
+  tags?: string[] | null
+}
+
+export interface FetchModsResponse {
+  mods: SearchModSummary[]
+  total: number
+}
+
+export interface NotificationModSummary {
+  mod_number?: string
+}
+
+export interface NotificationSummary {
+  id: string
+  type: string
+  title?: string | null
+  message?: string | null
+  is_read: boolean
+  created_at: string
+  related_post_id?: string | null
+  related_mod?: NotificationModSummary | null
+}
+
+export interface FetchNotificationsResponse {
+  notifications: NotificationSummary[]
+  unread_count: number
+  total: number
+  has_more: boolean
+}
+
+export interface CommunityUserSummary {
+  username?: string | null
+  avatar_url?: string | null
+}
+
+export interface CommunityPostSummary {
+  id: string
+  title?: string | null
+  category?: string | null
+  created_at?: string | null
+  reply_count?: number | null
+  like_count?: number | null
+  view_count?: number | null
+  image_urls?: string[] | null
+  author?: CommunityUserSummary | null
+  user?: CommunityUserSummary | null
+}
+
+export interface FetchPostsResponse {
+  data: CommunityPostSummary[]
+  total?: number
+  page?: number
+  limit?: number
+}
+
+export async function fetchMods(params: { q?: string; page?: number; limit?: number } = {}): Promise<FetchModsResponse> {
   const url = new URL(`${getApiBase()}/search`)
   if (params.q) url.searchParams.set('q', params.q)
   if (params.page !== undefined) url.searchParams.set('page', params.page.toString())
   if (params.limit !== undefined) url.searchParams.set('limit', params.limit.toString())
 
-  const json = await requestJson(url.toString())
+  const json = await requestJson<{ success: boolean; error?: string; data: FetchModsResponse }>(url.toString(), { timeoutMs: 12000 })
   
   if (!json.success) throw new Error(json.error || 'Failed to fetch mods')
   return json.data // { mods, total }
@@ -41,33 +110,33 @@ export async function getDownloadToken(modId: string, versionId?: string) {
   const url = new URL(`${getApiBase()}/mods/${modId}/download`)
   if (versionId) url.searchParams.set('version_id', versionId)
   
-  const json = await requestJson(url.toString())
-
+  const json = await requestJson<{ success: boolean; error?: string; data: { url: string; fileName?: string; fileSize?: number; version?: string; expiresAt?: number } }>(url.toString(), { timeoutMs: 12000 })
+  
   if (!json.success) throw new Error(json.error || 'Failed to get download token')
   return json.data // { url, fileName, fileSize, version, expiresAt }
 }
 
-export async function fetchGames() {
+export async function fetchGames(): Promise<GameSummary[]> {
   const url = new URL(`${getApiBase()}/games/list`)
-  const json = await requestJson(url.toString())
+  const json = await requestJson<{ success: boolean; error?: string; data: GameSummary[] }>(url.toString(), { timeoutMs: 12000 })
   if (!json.success) throw new Error(json.error || 'Failed to fetch games')
   return json.data
 }
 
-export async function fetchPosts(params: { category?: string; gameId?: string; page?: number; limit?: number } = {}) {
+export async function fetchPosts(params: { category?: string; gameId?: string; page?: number; limit?: number } = {}): Promise<FetchPostsResponse> {
   const url = new URL(`${getApiBase()}/community/forum`)
   if (params.category) url.searchParams.set('category', params.category)
   if (params.gameId) url.searchParams.set('game_id', params.gameId)
   if (params.page !== undefined) url.searchParams.set('page', params.page.toString())
   if (params.limit !== undefined) url.searchParams.set('limit', params.limit.toString())
 
-  const json = await requestJson(url.toString())
+  const json = await requestJson<{ success: boolean; error?: string; data: FetchPostsResponse }>(url.toString(), { timeoutMs: 12000 })
   
   if (!json.success) throw new Error(json.error || 'Failed to fetch posts')
   return json.data
 }
 
-export async function authenticatedFetch(url: string, options: RequestInit = {}) {
+export async function authenticatedFetch<T = unknown>(url: string, options: RequestInit = {}): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession()
   
   const headers = new Headers(options.headers || {})
@@ -75,27 +144,122 @@ export async function authenticatedFetch(url: string, options: RequestInit = {})
     headers.set('Authorization', `Bearer ${session.access_token}`)
   }
 
-  const json = await requestJson(url, { ...options, headers })
+  const json = await requestJson<{ success: boolean; error?: string; data: T }>(url, { ...options, headers, timeoutMs: 15000 })
   if (!json.success) throw new Error(json.error || 'API Request Failed')
   return json.data
 }
 
-export async function fetchMyProfile(userId: string) {
+export interface MyProfileSummary {
+  username: string
+  avatar_url: string | null
+}
+
+export async function fetchMyProfile(userId: string): Promise<MyProfileSummary> {
   const url = new URL(`${getApiBase()}/profile?userId=${userId}`)
-  const json = await requestJson(url.toString())
+  const json = await requestJson<{ success: boolean; error?: string; data: MyProfileSummary }>(url.toString(), { timeoutMs: 12000 })
   if (!json.success) throw new Error(json.error || 'Failed to fetch profile')
   return json.data
 }
 
 export async function fetchUnreadNotifications() {
-  const data = await authenticatedFetch(`${getApiBase()}/notifications?limit=1&unread_only=true`)
+  const data = await authenticatedFetch<FetchNotificationsResponse>(`${getApiBase()}/notifications?limit=1&unread_only=true`)
   return data.unread_count
+}
+
+export interface ModDetailAuthorSummary {
+  id?: string
+  user_number?: string | number
+  username?: string | null
+  avatar_url?: string | null
+  bio?: string | null
+}
+
+export interface ModDetailGameSummary {
+  id?: string
+  name?: string | null
+  game_number?: string
+}
+
+export interface ModDetailSummary {
+  id: string
+  mod_number: string
+  title: string
+  summary?: string | null
+  description?: string | null
+  thumbnail_url?: string | null
+  screenshot_urls?: string[] | null
+  tags?: string[] | null
+  created_at: string
+  download_count?: number | null
+  view_count?: number | null
+  latest_version?: string | null
+  game_id?: string
+  game?: ModDetailGameSummary | null
+  author?: ModDetailAuthorSummary | null
+}
+
+export interface ModVersionSummary {
+  id: string
+  version_number?: string | null
+  changelog?: string | null
+  file_size?: number | null
+  created_at: string
+}
+
+export interface ModReviewSummary {
+  id: string
+  content: string
+  is_positive: boolean
+  created_at: string
+  user?: ModDetailAuthorSummary | null
+}
+
+export interface ModDetailResponse {
+  mod: ModDetailSummary
+  versions: ModVersionSummary[]
+  reviews: ModReviewSummary[]
+}
+
+export interface PostUserSummary {
+  id?: string
+  user_number?: string | number
+  username?: string | null
+  avatar_url?: string | null
+}
+
+export interface PostGameSummary {
+  id?: string
+  name?: string | null
+}
+
+export interface PostDetailSummary {
+  id: string
+  title?: string | null
+  content?: string | null
+  category?: string | null
+  created_at: string
+  image_urls?: string[] | null
+  user?: PostUserSummary | null
+  game?: PostGameSummary | null
+}
+
+export interface PostReplySummary {
+  id: string | number
+  content: string
+  created_at: string
+  parent_id?: string | number | null
+  reply_to_user?: PostUserSummary | null
+  user?: PostUserSummary | null
+}
+
+export interface PostLikeStatus {
+  count: number
+  liked: boolean
 }
 
 // === Mod Detail ===
 
-export async function fetchModDetail(modNumber: string) {
-  const url = new URL(`${getApiBase()}/mods/${modNumber}/download`)
+export async function fetchModDetail(modNumber: string): Promise<ModDetailResponse | null> {
   // We use the search endpoint with a workaround — but actually we can use supabase directly
   // since the desktop has supabase client. Let's use it for richer data.
   const { supabase: sb } = await import('./supabase')
@@ -107,7 +271,7 @@ export async function fetchModDetail(modNumber: string) {
     .eq('status', 'approved')
     .limit(1)
 
-  const mod = mods?.[0]
+  const mod = (mods as ModDetailSummary[] | null)?.[0]
   if (!mod) return null
 
   const [versionsRes, reviewsRes] = await Promise.all([
@@ -128,48 +292,48 @@ export async function fetchModDetail(modNumber: string) {
 
   return {
     mod,
-    versions: versionsRes.data || [],
-    reviews: reviewsRes.data || [],
+    versions: (versionsRes.data as ModVersionSummary[] | null) || [],
+    reviews: (reviewsRes.data as ModReviewSummary[] | null) || [],
   }
 }
 
 // === Post Detail ===
 
-export async function fetchPostDetail(postId: string) {
+export async function fetchPostDetail(postId: string): Promise<PostDetailSummary> {
   const url = `${getApiBase()}/community/posts/${postId}`
-  const json = await requestJson(url)
+  const json = await requestJson<{ success: boolean; error?: string; data: PostDetailSummary }>(url, { timeoutMs: 12000 })
   if (!json.success) throw new Error(json.error || 'Failed to fetch post')
   return json.data
 }
 
-export async function fetchPostReplies(postId: string) {
+export async function fetchPostReplies(postId: string): Promise<PostReplySummary[]> {
   const url = `${getApiBase()}/community/posts/${postId}/replies`
-  const json = await requestJson(url)
+  const json = await requestJson<{ success: boolean; error?: string; data: PostReplySummary[] | { data?: PostReplySummary[] } }>(url, { timeoutMs: 12000 })
   if (!json.success) throw new Error(json.error || 'Failed to fetch replies')
-  return json.data
+  return Array.isArray(json.data) ? json.data : (json.data.data || [])
 }
 
-export async function fetchPostLikeStatus(postId: string) {
+export async function fetchPostLikeStatus(postId: string): Promise<PostLikeStatus> {
   try {
-    const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/like`)
+    const data = await authenticatedFetch<PostLikeStatus>(`${getApiBase()}/community/posts/${postId}/like`)
     return data // { count, liked }
   } catch {
     // Not logged in or error — return defaults
     const url = `${getApiBase()}/community/posts/${postId}/like`
-    const json = await requestJson(url)
-    if (json.success) return json.data
+    const json = await requestJson<{ success: boolean; data?: PostLikeStatus }>(url, { timeoutMs: 12000 })
+    if (json.success && json.data) return json.data
     return { count: 0, liked: false }
   }
 }
 
-export async function togglePostLike(postId: string) {
-  const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/like`, {
+export async function togglePostLike(postId: string): Promise<PostLikeStatus> {
+  const data = await authenticatedFetch<PostLikeStatus>(`${getApiBase()}/community/posts/${postId}/like`, {
     method: 'POST',
   })
   return data // { liked, count }
 }
 
-export async function submitPostReply(postId: string, content: string, parentId?: number) {
+export async function submitPostReply(postId: string, content: string, parentId?: string | number) {
   const body: Record<string, unknown> = { content }
   if (parentId) body.parent_id = parentId
 
@@ -183,13 +347,13 @@ export async function submitPostReply(postId: string, content: string, parentId?
 
 // === Notifications ===
 
-export async function fetchNotifications(params: { limit?: number; offset?: number; unread_only?: boolean } = {}) {
+export async function fetchNotifications(params: { limit?: number; offset?: number; unread_only?: boolean } = {}): Promise<FetchNotificationsResponse> {
   const url = new URL(`${getApiBase()}/notifications`)
   if (params.limit) url.searchParams.set('limit', params.limit.toString())
   if (params.offset) url.searchParams.set('offset', params.offset.toString())
   if (params.unread_only) url.searchParams.set('unread_only', 'true')
 
-  const data = await authenticatedFetch(url.toString())
+  const data = await authenticatedFetch<FetchNotificationsResponse>(url.toString())
   return data // { notifications, unread_count, total, has_more }
 }
 
@@ -203,11 +367,72 @@ export async function markNotificationsRead(ids?: string[]) {
   return data
 }
 
+export async function publishPost(postId: string) {
+  const data = await authenticatedFetch(`${getApiBase()}/community/forum/${postId}/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return data
+}
+
+export interface UserProfileSummary {
+  id: string
+  user_number: string | number
+  username: string
+  avatar_url?: string | null
+  bio?: string | null
+  created_at: string
+}
+
+export interface UserProfileStats {
+  posts: number
+  replies: number
+  reviews: number
+  mods: number
+}
+
+export interface UserProfileModSummary {
+  id: string
+  mod_number: string
+  title: string
+  thumbnail_url?: string | null
+  created_at: string
+  game?: {
+    name?: string | null
+  } | null
+}
+
+export interface UserProfilePostSummary {
+  id: string
+  category: string
+  title: string
+  created_at: string
+}
+
+export interface UserProfileReviewSummary {
+  id: string
+  is_positive: boolean
+  content: string
+  created_at: string
+  mod?: {
+    mod_number?: string
+    title?: string | null
+  } | null
+}
+
+export interface UserProfileResponse {
+  profile: UserProfileSummary
+  stats: UserProfileStats
+  recentPosts?: UserProfilePostSummary[]
+  recentReviews?: UserProfileReviewSummary[]
+  recentMods?: UserProfileModSummary[]
+}
+
 // === User Profile ===
 
-export async function fetchUserProfile(userNumber: string) {
+export async function fetchUserProfile(userNumber: string): Promise<UserProfileResponse> {
   const url = `${getApiBase()}/user/${userNumber}`
-  const json = await requestJson(url)
+  const json = await requestJson<{ success: boolean; error?: string; data: UserProfileResponse }>(url, { timeoutMs: 12000 })
   if (!json.success) throw new Error(json.error || 'Failed to fetch user profile')
   return json.data // { profile, stats, recentPosts, recentReviews, recentMods }
 }

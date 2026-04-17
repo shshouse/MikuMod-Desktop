@@ -17,6 +17,7 @@ import {
   togglePostLike,
   submitPostReply,
 } from "@/lib/api"
+import type { PostDetailSummary, PostLikeStatus, PostReplySummary } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +25,14 @@ interface PostDetailPageProps {
   postId: string
   onNavigate: (tab: string) => void
   onBack: () => void
+}
+
+interface SessionUser {
+  id: string
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误"
 }
 
 const categoryColors: Record<string, string> = {
@@ -38,8 +47,8 @@ const categoryColors: Record<string, string> = {
 }
 
 export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPageProps) {
-  const [post, setPost] = useState<any>(null)
-  const [replies, setReplies] = useState<any[]>([])
+  const [post, setPost] = useState<PostDetailSummary | null>(null)
+  const [replies, setReplies] = useState<PostReplySummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -48,9 +57,9 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
   const [likeLoading, setLikeLoading] = useState(false)
 
   const [replyContent, setReplyContent] = useState("")
-  const [replyTo, setReplyTo] = useState<{ id: number; username: string } | null>(null)
+  const [replyTo, setReplyTo] = useState<{ id: string | number; username: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -59,24 +68,32 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
   }, [])
 
   useEffect(() => {
-    setIsLoading(true)
-    setError("")
-    Promise.all([
+    let isActive = true
+
+    void Promise.all([
       fetchPostDetail(postId).catch(() => null),
-      fetchPostReplies(postId).catch(() => []),
-      fetchPostLikeStatus(postId).catch(() => ({ count: 0, liked: false })),
+      fetchPostReplies(postId).catch(() => [] as PostReplySummary[]),
+      fetchPostLikeStatus(postId).catch((): PostLikeStatus => ({ count: 0, liked: false })),
     ])
       .then(([postData, repliesData, likeData]) => {
+        if (!isActive) return
         if (!postData) {
           setError("帖子不存在或已被删除")
           return
         }
         setPost(postData)
-        setReplies(Array.isArray(repliesData) ? repliesData : repliesData?.data || [])
+        setReplies(repliesData)
         setLikeCount(likeData.count || 0)
         setLiked(likeData.liked || false)
       })
-      .finally(() => setIsLoading(false))
+      .finally(() => {
+        if (!isActive) return
+        setIsLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
   }, [postId])
 
   const handleLike = async () => {
@@ -86,7 +103,9 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
       const result = await togglePostLike(postId)
       setLiked(result.liked)
       setLikeCount(result.count)
-    } catch { }
+    } catch (error) {
+      console.error("Failed to toggle post like:", error)
+    }
     finally { setLikeLoading(false) }
   }
 
@@ -99,9 +118,9 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
       setReplyTo(null)
       // Refresh replies
       const refreshed = await fetchPostReplies(postId).catch(() => [])
-      setReplies(Array.isArray(refreshed) ? refreshed : refreshed?.data || [])
-    } catch (err: any) {
-      alert(`回复失败: ${err.message}`)
+      setReplies(refreshed)
+    } catch (submitError) {
+      alert(`回复失败: ${getErrorMessage(submitError)}`)
     } finally {
       setSubmitting(false)
     }
@@ -129,7 +148,7 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
     )
   }
 
-  const catClass = categoryColors[post.category] || "bg-blue-500/10 text-blue-400"
+  const catClass = categoryColors[post.category || "讨论"] || "bg-blue-500/10 text-blue-400"
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -182,9 +201,9 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
           </div>
 
           {/* Images */}
-          {post.image_urls?.length > 0 && (
+          {Array.isArray(post.image_urls) && post.image_urls.length > 0 && (
             <div className="flex flex-wrap gap-3 mt-4">
-              {post.image_urls.map((url: string, i: number) => (
+              {post.image_urls.map((url, i) => (
                 <img
                   key={i}
                   src={url}
@@ -249,7 +268,7 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
           <h3 className="text-sm font-semibold text-muted-foreground">
             全部回复 ({replies.length})
           </h3>
-          {replies.map((reply: any) => (
+          {replies.map((reply) => (
             <div key={reply.id} className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between">
                 <button

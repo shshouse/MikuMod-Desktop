@@ -210,6 +210,7 @@ function getGameDirs(app, gameName) {
     downloadsDir: path.join(systemDir, 'downloads'),
     tempDir: path.join(systemDir, 'temp'),
     statePath: path.join(systemDir, 'state.json'),
+    stateBackupPath: path.join(systemDir, 'state.last-good.json'),
   }
 }
 
@@ -224,43 +225,90 @@ async function ensureGameDirs(dirs) {
   ])
 }
 
+function createEmptyState(gameId, gameName) {
+  return {
+    version: STATE_VERSION,
+    gameId,
+    gameName,
+    mods: {},
+    files: {},
+  }
+}
+
+function normalizeState(parsed, gameId, gameName) {
+  return {
+    version: parsed?.version || STATE_VERSION,
+    gameId: parsed?.gameId || gameId,
+    gameName: parsed?.gameName || gameName,
+    mods: parsed?.mods || {},
+    files: parsed?.files || {},
+  }
+}
+
+async function readStateFile(filePath, gameId, gameName) {
+  const raw = await fsPromises.readFile(filePath, 'utf-8')
+  const parsed = JSON.parse(raw)
+  return normalizeState(parsed, gameId, gameName)
+}
+
+async function replaceStateFile(tempPath, targetPath) {
+  try {
+    await fsPromises.rename(tempPath, targetPath)
+    return
+  } catch (error) {
+    if (!error || (error.code !== 'EEXIST' && error.code !== 'EPERM')) {
+      throw error
+    }
+  }
+
+  await removeFileIfExists(targetPath)
+  await fsPromises.rename(tempPath, targetPath)
+}
+
 async function loadState(dirs, gameId, gameName) {
   await ensureGameDirs(dirs)
 
-  if (!(await pathExists(dirs.statePath))) {
-    return {
-      version: STATE_VERSION,
-      gameId,
-      gameName,
-      mods: {},
-      files: {},
+  if (await pathExists(dirs.statePath)) {
+    try {
+      return await readStateFile(dirs.statePath, gameId, gameName)
+    } catch {
     }
   }
 
-  try {
-    const raw = await fsPromises.readFile(dirs.statePath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    return {
-      version: parsed.version || STATE_VERSION,
-      gameId: parsed.gameId || gameId,
-      gameName: parsed.gameName || gameName,
-      mods: parsed.mods || {},
-      files: parsed.files || {},
-    }
-  } catch {
-    return {
-      version: STATE_VERSION,
-      gameId,
-      gameName,
-      mods: {},
-      files: {},
+  if (await pathExists(dirs.stateBackupPath)) {
+    try {
+      const recoveredState = await readStateFile(dirs.stateBackupPath, gameId, gameName)
+      await copyFileSafe(dirs.stateBackupPath, dirs.statePath)
+      return recoveredState
+    } catch {
     }
   }
+
+  return createEmptyState(gameId, gameName)
 }
 
 async function saveState(dirs, state) {
   await ensureGameDirs(dirs)
-  await fsPromises.writeFile(dirs.statePath, JSON.stringify(state, null, 2), 'utf-8')
+  const serialized = JSON.stringify(state, null, 2)
+  const tempPath = path.join(dirs.systemDir, `state.${createId('tmp')}.json.tmp`)
+
+  await fsPromises.writeFile(tempPath, serialized, 'utf-8')
+
+  if (await pathExists(dirs.statePath)) {
+    await copyFileSafe(dirs.statePath, dirs.stateBackupPath)
+  }
+
+  try {
+    await replaceStateFile(tempPath, dirs.statePath)
+  } catch (error) {
+    await removeFileIfExists(tempPath)
+    if (!(await pathExists(dirs.statePath)) && (await pathExists(dirs.stateBackupPath))) {
+      await copyFileSafe(dirs.stateBackupPath, dirs.statePath).catch(() => {})
+    }
+    throw error
+  }
+
+  await copyFileSafe(dirs.statePath, dirs.stateBackupPath)
 }
 
 async function ensureUniqueFolder(gameDir, preferredName) {

@@ -2,6 +2,7 @@ import {
   Bell,
   BellOff,
   CheckCheck,
+  type LucideIcon,
   Loader2,
   Package,
   MessageSquare,
@@ -12,6 +13,7 @@ import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { fetchNotifications, markNotificationsRead } from "@/lib/api"
+import type { NotificationSummary } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
@@ -19,7 +21,7 @@ interface NotificationsPageProps {
   onNavigate: (tab: string) => void
 }
 
-const typeIcons: Record<string, any> = {
+const typeIcons: Record<string, LucideIcon> = {
   mod_approved: Package,
   mod_rejected: Package,
   new_review: Star,
@@ -38,9 +40,8 @@ const typeLabels: Record<string, string> = {
 }
 
 export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
-  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifications, setNotifications] = useState<NotificationSummary[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -65,7 +66,6 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
         setNotifications((prev) => [...prev, ...(data.notifications || [])])
       }
       setUnreadCount(data.unread_count || 0)
-      setTotal(data.total || 0)
       setHasMore(data.has_more || false)
     } catch (err) {
       console.error("Failed to load notifications:", err)
@@ -80,7 +80,9 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
       await markNotificationsRead()
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
       setUnreadCount(0)
-    } catch { }
+    } catch (error) {
+      console.error("Failed to mark all notifications as read:", error)
+    }
   }
 
   const handleReadOne = async (id: string) => {
@@ -90,10 +92,12 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       )
       setUnreadCount((c) => Math.max(0, c - 1))
-    } catch { }
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error)
+    }
   }
 
-  const getNotificationLink = (n: any): string | null => {
+  const getNotificationLink = (n: NotificationSummary): string | null => {
     if (n.related_mod?.mod_number) return `mod:${n.related_mod.mod_number}`
     if (n.related_post_id) return `post:${n.related_post_id}`
     return null

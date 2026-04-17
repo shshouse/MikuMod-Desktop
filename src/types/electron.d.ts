@@ -23,13 +23,24 @@ interface UpdaterProgress {
   [key: string]: unknown
 }
 
+export interface DownloadResumeData {
+  path: string
+  urlChain: string[]
+  mimeType?: string
+  offset: number
+  length: number
+  lastModified?: string
+  eTag?: string
+  startTime?: number
+}
+
 export interface ElectronAPI {
   getAppDir: () => Promise<string>
   selectDirectory: () => Promise<string | null>
   selectModFile: () => Promise<string | null>
   openDirectory: (path: string) => Promise<void>
   openExternal: (url: string) => Promise<void>
-  httpRequest: (url: string, options?: RequestInit) => Promise<{ ok: boolean; status: number; text: string }>
+  httpRequest: (url: string, options?: RequestInit & { timeoutMs?: number }) => Promise<{ ok: boolean; status: number; text: string; headers?: Record<string, string> }>
   fileExists: (path: string) => Promise<boolean>
   readFile: (path: string) => Promise<string>
   writeFile: (path: string, content: string) => Promise<void>
@@ -59,10 +70,11 @@ export interface ElectronAPI {
     percent?: number
     savePath?: string
     error?: string
+    resumeData?: DownloadResumeData
   }) => void) => void
   startDownload: (url: string, downloadId: string, fileName?: string, saveDir?: string) => Promise<void>
   pauseDownload: (id: string) => Promise<void>
-  resumeDownload: (id: string) => Promise<void>
+  resumeDownload: (id: string, resumeData?: DownloadResumeData) => Promise<void>
   cancelDownload: (id: string) => Promise<void>
 
   listManagedMods: (input: { gameId: string; gameName: string }) => Promise<ManagedModSummary[]>

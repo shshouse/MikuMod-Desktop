@@ -2,8 +2,13 @@ import { FolderOpen, Gamepad2, Loader2, MoreHorizontal, Plus, Radar, Search, X }
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { fetchGames } from "@/lib/api"
+import type { GameSummary } from "@/lib/api"
 import { saveCustomGames, saveLocalGamePaths } from "@/lib/desktop-config"
 import type { CustomGameEntry } from "@/lib/desktop-config"
+
+interface DisplayGame extends GameSummary {
+  source: "platform" | "local"
+}
 
 interface GamesPageEnhancedProps {
   searchQuery: string
@@ -21,7 +26,7 @@ export function GamesPageEnhanced({
   sharedCustomGames,
   onCustomGamesChange,
 }: GamesPageEnhancedProps) {
-  const [games, setGames] = useState<any[]>([])
+  const [games, setGames] = useState<GameSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isScanning, setIsScanning] = useState(false)
   const [scanResult, setScanResult] = useState<string | null>(null)
@@ -50,13 +55,13 @@ export function GamesPageEnhanced({
   }, [])
 
   const mergedGames = useMemo(() => {
-    const platformGames = games.map((game) => ({ ...game, source: "platform" as const }))
-    const localOnlyGames = customGames.map((game) => ({
+    const platformGames: DisplayGame[] = games.map((game) => ({ ...game, source: "platform" }))
+    const localOnlyGames: DisplayGame[] = customGames.map((game) => ({
       id: game.id,
       name: game.name,
       images: [],
       mod_count: 0,
-      source: "local" as const,
+      source: "local",
     }))
     const allGames = [...platformGames, ...localOnlyGames]
     if (!searchQuery.trim()) return allGames
@@ -117,8 +122,8 @@ export function GamesPageEnhanced({
       const nextPaths = { ...localPaths }
       const matched: string[] = []
       for (const game of games) {
-        if (!(game as any).steam_app_id || nextPaths[game.id]) continue
-        const installPath = steamMap.get((game as any).steam_app_id)
+        if (!game.steam_app_id || nextPaths[game.id]) continue
+        const installPath = steamMap.get(game.steam_app_id)
         if (installPath) {
           nextPaths[game.id] = installPath
           matched.push(game.name)

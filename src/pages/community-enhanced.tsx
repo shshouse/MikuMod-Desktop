@@ -4,6 +4,7 @@ import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { fetchPosts } from "@/lib/api"
+import type { CommunityPostSummary } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
 
 interface CommunityPageEnhancedProps {
@@ -20,7 +21,7 @@ const categoryColors: Record<string, string> = {
 }
 
 export function CommunityPageEnhanced({ searchQuery }: CommunityPageEnhancedProps) {
-  const [posts, setPosts] = useState<any[]>([])
+  const [posts, setPosts] = useState<CommunityPostSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -102,7 +103,7 @@ export function CommunityPageEnhanced({ searchQuery }: CommunityPageEnhancedProp
                   </div>
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${categoryColors[post.category] || "bg-muted text-muted-foreground"}`}>
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${categoryColors[post.category || "默认"] || "bg-muted text-muted-foreground"}`}>
                         {post.category || "默认"}
                       </span>
                       <button className="text-left" onClick={() => void openPost(post.id)}>

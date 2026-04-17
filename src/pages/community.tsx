@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { fetchPosts as fetchPostsApi } from "@/lib/api"
+import type { CommunityPostSummary } from "@/lib/api"
 
 const categoryColors: Record<string, string> = {
   "默认": "bg-blue-500/10 text-blue-400",
@@ -14,7 +15,7 @@ const categoryColors: Record<string, string> = {
 }
 
 export function CommunityPage() {
-  const [posts, setPosts] = useState<any[]>([])
+  const [posts, setPosts] = useState<CommunityPostSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export function CommunityPage() {
       setIsLoading(true)
       try {
         const data = await fetchPostsApi({ limit: 20 })
-        setPosts(data.posts || [])
+        setPosts(data.data || [])
       } catch (err) {
         console.error("Failed to fetch posts:", err)
       } finally {
@@ -72,7 +73,7 @@ export function CommunityPage() {
                   </div>
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${categoryColors[post.category] || "bg-muted text-muted-foreground"}`}>
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${categoryColors[post.category || "默认"] || "bg-muted text-muted-foreground"}`}>
                         {post.category || "默认"}
                       </span>
                       <h3 className="text-sm font-medium text-foreground/90 group-hover:text-blue-400 transition-colors truncate">

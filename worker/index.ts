@@ -39,6 +39,8 @@ const HOP_HEADERS = new Set([
   'te', 'trailer', 'upgrade', 'proxy-authorization', 'proxy-authenticate',
 ]);
 
+const edgeCache = (caches as CacheStorage & { default: Cache }).default;
+
 /**
  * 判断请求是否可以缓存
  */
@@ -54,7 +56,7 @@ function isCacheable(method: string, host: string, pathname: string): boolean {
 /**
  * 根据资源类型决定缓存时长
  */
-function getCacheTTL(host: string, pathname: string): number {
+function getCacheTTL(host: string): number {
   // 字体/头像等长期不变的资源：7天
   if (host === 'fonts.gstatic.com' || host === 'fonts.googleapis.com') return 604800;
   if (host === 'avatars.githubusercontent.com') return 86400; // 头像1天
@@ -103,8 +105,7 @@ export default {
     // 如果可缓存，先查 CF 边缘缓存
     if (shouldCache) {
       const cacheKey = new Request(targetUrl, { method: 'GET' });
-      const cache = caches.default;
-      const cached = await cache.match(cacheKey);
+      const cached = await edgeCache.match(cacheKey);
       if (cached) {
         // 命中缓存，直接返回（添加标记头）
         const resp = new Response(cached.body, cached);
@@ -146,13 +147,13 @@ export default {
 
     // 写入边缘缓存（异步，不阻塞响应）
     if (shouldCache && upstreamResponse.status === 200) {
-      const ttl = getCacheTTL(hostLower, url.pathname);
+      const ttl = getCacheTTL(hostLower);
       const cacheKey = new Request(targetUrl, { method: 'GET' });
       const cacheResponse = new Response(response.clone().body, response);
       cacheResponse.headers.set('Cache-Control', `public, max-age=${ttl}`);
       // waitUntil 不存在于类型定义中，但 CF Workers 运行时支持
       // 使用 ctx.waitUntil 需要 ExecutionContext，这里用 cache.put 直接调用即可
-      caches.default.put(cacheKey, cacheResponse);
+      edgeCache.put(cacheKey, cacheResponse);
     }
 
     return response;
