@@ -615,7 +615,10 @@ ipcMain.handle('copy-file', async (_e, srcPath, destPath) => {
       console.warn(`copy-file src blocked: ${srcPath}`)
       return false
     }
-    // 目标路径需要动态加入安全目录 (用户指定的游戏目录)
+    if (!isPathAllowed(destPath)) {
+      console.warn(`copy-file dest blocked: ${destPath}`)
+      return false
+    }
     const destDir = path.dirname(destPath)
     await fsPromises.mkdir(destDir, { recursive: true })
     await fsPromises.copyFile(srcPath, destPath)
