@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/layout/sidebar"
-import { TopBarEnhanced } from "@/components/layout/top-bar-enhanced"
+import { TopBar } from "@/components/layout/top-bar"
 import { WindowControls } from "@/components/layout/window-controls"
-import { ModsPageEnhanced } from "@/pages/mods-enhanced"
+import { ModsPage } from "@/pages/mods"
 import { CommunityFeed } from "@/pages/community-feed"
-import { GamesPageEnhanced } from "@/pages/games-enhanced"
-import { DownloadsPageEnhanced } from "@/pages/downloads-enhanced"
-import { SettingsPageEnhanced } from "@/pages/settings-enhanced"
+import { GamesPage } from "@/pages/games"
+import { DownloadsPage } from "@/pages/downloads"
+import { SettingsPage } from "@/pages/settings"
 import { GameModManagerPage } from "@/pages/game-mod-manager"
 import { fetchGames } from "@/lib/api"
 import { getCustomGames, getLocalGamePaths, saveLocalGamePaths } from "@/lib/desktop-config"
@@ -128,12 +128,12 @@ function App() {
 
     switch (activeTab) {
       case "mods":
-        return <ModsPageEnhanced searchQuery={searchQuery} onNavigate={navigateTo} />
+        return <ModsPage searchQuery={searchQuery} onNavigate={navigateTo} />
       case "community":
         return <CommunityFeed searchQuery={searchQuery} onNavigate={navigateTo} />
       case "games":
         return (
-          <GamesPageEnhanced
+          <GamesPage
             searchQuery={searchQuery}
             sharedLocalPaths={localPaths}
             onPathsChange={persistPaths}
@@ -142,7 +142,7 @@ function App() {
           />
         )
       case "downloads":
-        return <DownloadsPageEnhanced />
+        return <DownloadsPage />
       case "accelerator":
         return <AcceleratorPage />
       case "notifications":
@@ -150,9 +150,9 @@ function App() {
       case "modder-dashboard":
         return <ModderDashboard onNavigate={navigateTo} />
       case "settings":
-        return <SettingsPageEnhanced />
+        return <SettingsPage />
       default:
-        return <ModsPageEnhanced searchQuery={searchQuery} onNavigate={navigateTo} />
+        return <ModsPage searchQuery={searchQuery} onNavigate={navigateTo} />
     }
   }, [activeTab, searchQuery, localPaths, customGames, platformGames, persistPaths, handleSetPath, navigateTo, handleBack])
 
@@ -160,7 +160,7 @@ function App() {
     <div className="dark h-screen w-screen flex overflow-hidden bg-background text-foreground">
       <Sidebar activeTab={activeTab} onTabChange={navigateTo} installedGames={installedGames} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBarEnhanced
+        <TopBar
           activeTab={activeTab}
           canGoBack={canGoBack}
           canGoForward={canGoForward}

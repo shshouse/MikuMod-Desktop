@@ -122,7 +122,6 @@ export async function fetchWithRetry(url: string, options: HttpRequestOptions = 
     retryDelayMs = 400,
     maxRetryDelayMs = 3000,
     retryOnStatuses = DEFAULT_RETRY_ON_STATUSES,
-    requestId: _requestIdArg,
     ...requestOptions
   } = options
 

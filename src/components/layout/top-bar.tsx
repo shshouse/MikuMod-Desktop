@@ -1,93 +1,138 @@
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
-  Search,
-  Bell,
-  Settings,
+  LogOut,
   Mail,
+  Search,
+  Settings,
   User,
-  X,
-  Loader2,
-  LogOut
 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
 import { fetchMyProfile, fetchUnreadNotifications } from "@/lib/api"
-import { Button } from "@/components/ui/button"
+import { getDesktopSettings } from "@/lib/desktop-config"
+import { supabase } from "@/lib/supabase"
 
 interface TopBarProps {
-  onNavigate?: (tab: string) => void
+  activeTab: string
+  canGoBack: boolean
+  canGoForward: boolean
+  onBack: () => void
+  onForward: () => void
+  onNavigate: (tab: string) => void
+  searchQuery: string
+  onSearchChange: (value: string) => void
 }
 
-export function TopBar({ onNavigate }: TopBarProps) {
-  const [searchQuery, setSearchQuery] = useState("")
+export function TopBar({
+  activeTab,
+  canGoBack,
+  canGoForward,
+  onBack,
+  onForward,
+  onNavigate,
+  searchQuery,
+  onSearchChange,
+}: TopBarProps) {
   const [userProfile, setUserProfile] = useState<{ username: string; avatar_url: string | null } | null>(null)
-  
-  // Login State
-  const [showLoginModal, setShowLoginModal] = useState(false)
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
-  const [loginError, setLoginError] = useState("")
-
-  // Notification State
   const [unreadCount, setUnreadCount] = useState(0)
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (isUnmounted = false) => {
     try {
       const count = await fetchUnreadNotifications()
-      setUnreadCount(count || 0)
+      if (!isUnmounted) setUnreadCount(count || 0)
     } catch (error) {
       console.error(error)
     }
   }, [])
 
   useEffect(() => {
-    async function getUser() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        try {
-          const profile = await fetchMyProfile(session.user.id)
-          setUserProfile(profile)
-        } catch (e) {
-          console.error(e)
-        }
-        void loadNotifications()
-      }
-    }
-    
-    getUser()
+    let unmounted = false
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    async function getUser() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.user || unmounted) {
+        return
+      }
+
+      try {
+        const profile = await fetchMyProfile(session.user.id)
+        if (!unmounted) setUserProfile(profile)
+      } catch (error) {
+        console.error(error)
+      }
+
+      await loadNotifications(unmounted)
+    }
+
+    void getUser()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (unmounted) return
       if (event === "SIGNED_IN" && session?.user) {
         try {
           const profile = await fetchMyProfile(session.user.id)
-          setUserProfile(profile)
-        } catch (e) {
-          console.error(e)
+          if (!unmounted) setUserProfile(profile)
+          await loadNotifications(unmounted)
+        } catch (error) {
+          console.error(error)
         }
-        void loadNotifications()
-        setShowLoginModal(false)
       } else if (event === "SIGNED_OUT") {
-        setUserProfile(null)
-        setUnreadCount(0)
+        if (!unmounted) {
+          setUserProfile(null)
+          setUnreadCount(0)
+        }
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      unmounted = true
+      subscription.unsubscribe()
+    }
   }, [loadNotifications])
 
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoggingIn(true)
-    setLoginError("")
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    setIsLoggingIn(false)
-    if (error) {
-      setLoginError(error.message === "Invalid login credentials" ? "账号或密码错误" : error.message)
+  // Deep Link: handle auth callback from web login
+  useEffect(() => {
+    let unmounted = false
+
+    const handler = async (url: string) => {
+      if (unmounted || !url.startsWith("mikumod://auth-callback")) return
+      
+      try {
+        const urlObj = new URL(url)
+        const accessToken = urlObj.searchParams.get("access_token")
+        const refreshToken = urlObj.searchParams.get("refresh_token")
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+        }
+      } catch (error) {
+        console.error("Auth callback error:", error)
+      }
+    }
+    
+    window.electronAPI?.onDeepLink?.(handler)
+
+    return () => {
+      unmounted = true
+    }
+  }, [])
+
+  const handleLogin = async () => {
+    const settings = getDesktopSettings()
+    const loginUrl = `${settings.webBaseUrl}/login?redirect=desktop`
+    // Prefer embedded login window; fall back to system browser
+    if (window.electronAPI?.openLoginWindow) {
+      await window.electronAPI.openLoginWindow(loginUrl)
+    } else {
+      await window.electronAPI?.openExternal(loginUrl)
     }
   }
 
@@ -95,15 +140,30 @@ export function TopBar({ onNavigate }: TopBarProps) {
     await supabase.auth.signOut()
   }
 
+  const openWebPath = async (path: string) => {
+    const settings = getDesktopSettings()
+    await window.electronAPI?.openExternal(`${settings.webBaseUrl}${path}`)
+  }
+
+  const placeholder =
+    activeTab === "community" ? "搜索帖子标题..." : activeTab === "games" ? "搜索游戏..." : "搜索模组..."
+
   return (
     <>
-      <div className="drag-region h-12 shrink-0 border-b border-border flex items-center justify-between pl-4 pr-[144px] gap-4 bg-background">
-        {/* 左侧：导航箭头 + 搜索 */}
+      <div className="drag-region h-14 shrink-0 border-b border-border flex items-center justify-between pl-4 pr-[144px] gap-4 bg-background">
         <div className="flex items-center gap-2 no-drag">
-          <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+          <button
+            onClick={onBack}
+            disabled={!canGoBack}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+          >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+          <button
+            onClick={onForward}
+            disabled={!canGoForward}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+          >
             <ChevronRight className="w-4 h-4" />
           </button>
 
@@ -111,47 +171,57 @@ export function TopBar({ onNavigate }: TopBarProps) {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="搜索模组、游戏..."
+              placeholder={placeholder}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-56 h-8 pl-8 pr-3 rounded-full border border-border bg-muted/50 text-xs placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring focus:bg-background transition-colors"
+              onChange={(event) => onSearchChange(event.target.value)}
+              className="w-64 h-8 pl-8 pr-3 rounded-full border border-border bg-muted/50 text-xs placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring focus:bg-background transition-colors"
             />
           </div>
         </div>
 
-        {/* 中间空白拖拽区 */}
         <div className="flex-1" />
 
-        {/* 右侧：功能按钮 + 头像 */}
         <div className="flex items-center gap-1 no-drag">
-          {/* 通知 */}
-          <button className="relative w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+          <button
+            onClick={() => onNavigate("notifications")}
+            className="relative w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            title="打开通知中心"
+          >
             <Bell className="w-4 h-4" />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500 border border-background" />
+              <span className="absolute top-1 right-1 min-w-4 h-4 rounded-full bg-red-500 text-[10px] text-white px-1 flex items-center justify-center border border-background">
+                {Math.min(unreadCount, 99)}
+              </span>
             )}
           </button>
 
-          {/* 邮件/消息 */}
-          <button className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+          <button
+            onClick={() => openWebPath("/forum")}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            title="打开社区"
+          >
             <Mail className="w-4 h-4" />
           </button>
 
-          {/* 设置 */}
           <button
-            onClick={() => onNavigate?.("settings")}
+            onClick={() => onNavigate("settings")}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            title="打开设置"
           >
             <Settings className="w-4 h-4" />
           </button>
 
-          {/* 分隔线 */}
           <div className="w-px h-5 bg-border mx-1" />
 
-          {/* 头像 + 用户名 */}
           <div className="flex items-center gap-2 group relative">
-            <button 
-              onClick={() => !userProfile && setShowLoginModal(true)}
+            <button
+              onClick={() => {
+                if (!userProfile) {
+                  handleLogin()
+                  return
+                }
+                void openWebPath("/settings")
+              }}
               className="flex items-center gap-2 px-2 py-1.5 rounded-full hover:bg-muted transition-colors"
             >
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-sm overflow-hidden border border-blue-500/20">
@@ -161,15 +231,14 @@ export function TopBar({ onNavigate }: TopBarProps) {
                   <User className="w-3.5 h-3.5 text-white" />
                 )}
               </div>
-              <span className="text-xs font-medium text-foreground/80 max-w-[80px] truncate">
+              <span className="text-xs font-medium text-foreground/80 max-w-[100px] truncate">
                 {userProfile?.username || "点击登录"}
               </span>
             </button>
-            
-            {/* 鼠标悬浮菜单 (如果已登录) */}
+
             {userProfile && (
               <div className="absolute right-0 top-full mt-1 w-32 hidden group-hover:flex flex-col bg-popover border border-border rounded-lg shadow-lg overflow-hidden z-50">
-                <button 
+                <button
                   onClick={handleLogout}
                   className="w-full text-left px-4 py-2 text-xs text-destructive hover:bg-muted flex items-center gap-2 transition-colors"
                 >
@@ -181,63 +250,6 @@ export function TopBar({ onNavigate }: TopBarProps) {
           </div>
         </div>
       </div>
-
-      {/* Login Modal */}
-      {showLoginModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm no-drag">
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl relative">
-            <button 
-              onClick={() => setShowLoginModal(false)}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            
-            <div className="text-center mb-6">
-              <h3 className="text-xl font-bold tracking-tight">通行证登录</h3>
-              <p className="text-sm text-muted-foreground mt-1.5">登录 MikuMod 账户同步您的数据</p>
-            </div>
-
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <input
-                  type="email"
-                  placeholder="邮箱"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                />
-                <input
-                  type="password"
-                  placeholder="密码"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              {loginError && (
-                <div className="px-3 py-2 rounded-md bg-destructive/10 text-destructive text-xs font-medium border border-destructive/20">
-                  {loginError}
-                </div>
-              )}
-
-              <Button type="submit" className="w-full font-medium" disabled={isLoggingIn}>
-                {isLoggingIn ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    登录中...
-                  </>
-                ) : (
-                  "立即登录"
-                )}
-              </Button>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   )
 }

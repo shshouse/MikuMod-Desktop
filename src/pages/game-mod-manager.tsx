@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { fetchMods, getDownloadToken } from "@/lib/api"
 import { importExternalMod, installManagedMod, listManagedMods, uninstallManagedMod } from "@/lib/mod-manager"
 import type { ManagedModSummary } from "@/lib/mod-manager"
-import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
+import { useDownloadStore } from "@/store/download"
 
 interface GameModManagerPageProps {
   gameId: string
@@ -109,7 +109,7 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
   const queueDownload = async (mod: PlatformLibraryMod, autoInstall: boolean) => {
     try {
       const tokenInfo = await getDownloadToken(mod.id)
-      await useDownloadStoreEnhanced.getState().addDownload({
+      await useDownloadStore.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,
         gameId,

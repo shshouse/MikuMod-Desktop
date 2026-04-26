@@ -43,6 +43,7 @@ function createSupabaseFetch() {
             clearStoredSupabaseSessions()
           }
         } catch {
+          // Ignore body parse failures; the refresh response is already being returned to the caller.
         }
 
         return response

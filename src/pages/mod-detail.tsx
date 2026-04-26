@@ -18,7 +18,7 @@ import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { fetchModDetail, getDownloadToken, submitModReview } from "@/lib/api"
 import type { ModDetailResponse, ModReviewSummary, ModVersionSummary } from "@/lib/api"
-import { useDownloadStoreEnhanced } from "@/store/download-enhanced"
+import { useDownloadStore } from "@/store/download"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
@@ -107,7 +107,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
     setDownloading(true)
     try {
       const tokenInfo = await getDownloadToken(mod.mod_number, selectedVersionId || undefined)
-      await useDownloadStoreEnhanced.getState().addDownload({
+      await useDownloadStore.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,
         gameId: mod.game?.id || mod.game_id,
