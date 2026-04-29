@@ -196,6 +196,7 @@ export interface ModDetailSummary {
   summary?: string | null
   description?: string | null
   thumbnail_url?: string | null
+  image_urls?: string[] | null
   screenshot_urls?: string[] | null
   tags?: string[] | null
   created_at: string

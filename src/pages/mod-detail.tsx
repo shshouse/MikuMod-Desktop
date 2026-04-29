@@ -93,10 +93,11 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
 
   const screenshots = useMemo(() => {
     if (!mod) return []
-    const urls: string[] = []
-    if (mod.thumbnail_url) urls.push(mod.thumbnail_url)
-    if (mod.screenshot_urls) urls.push(...mod.screenshot_urls)
-    return urls
+    return Array.from(new Set([
+      mod.thumbnail_url,
+      ...(mod.image_urls || []),
+      ...(mod.screenshot_urls || []),
+    ].filter((url): url is string => !!url)))
   }, [mod])
 
   const positiveCount = reviews.filter((review) => review.is_positive).length
@@ -164,44 +165,47 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
   }
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
-      {/* Hero / Gallery */}
-      <div className="shrink-0 relative">
-        <div className="aspect-[21/9] max-h-[320px] bg-gradient-to-br from-muted to-muted/30 overflow-hidden relative">
-          {screenshots.length > 0 ? (
-            <img
-              src={screenshots[currentImageIndex]}
-              alt={mod.title}
-              className="w-full h-full object-cover"
-            />
-          ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-
-          {/* Thumbnails */}
-          {screenshots.length > 1 && (
-            <div className="absolute bottom-3 left-6 flex gap-2">
-              {screenshots.map((url: string, i: number) => (
-                <button
-                  key={i}
-                  onClick={() => setCurrentImageIndex(i)}
-                  className={cn(
-                    "w-16 h-10 rounded border-2 overflow-hidden transition-all",
-                    i === currentImageIndex ? "border-blue-500 shadow-lg" : "border-white/20 opacity-60 hover:opacity-100"
-                  )}
-                >
-                  <img src={url} alt="" className="w-full h-full object-cover" />
-                </button>
-              ))}
+    <div className="flex h-full overflow-hidden">
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        {/* Hero / Gallery */}
+        <div className="shrink-0 p-6 pb-0">
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="aspect-[21/9] max-h-[320px] bg-gradient-to-br from-muted to-muted/30 overflow-hidden relative">
+            {screenshots.length > 0 ? (
+              <img
+                src={screenshots[currentImageIndex]}
+                alt={mod.title}
+                className="w-full h-full object-cover"
+              />
+            ) : null}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Content */}
-      <div className="px-6 py-5 flex gap-6">
-        {/* Main */}
-        <div className="flex-1 min-w-0 space-y-5">
-          {/* Title & Meta */}
+            {/* Thumbnails */}
+            {screenshots.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto border-t border-border p-3">
+                {screenshots.map((url: string, i: number) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentImageIndex(i)}
+                    className={cn(
+                      "h-14 w-20 shrink-0 rounded-lg border-2 overflow-hidden transition-all",
+                      i === currentImageIndex ? "border-blue-500 shadow-lg" : "border-transparent opacity-70 hover:opacity-100"
+                    )}
+                  >
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-5">
+          {/* Main */}
+          <div className="min-w-0 space-y-5">
+            {/* Title & Meta */}
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
@@ -406,18 +410,20 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
             </div>
           )}
         </div>
+      </div>
+      </div>
 
-        {/* Sidebar */}
-        <div className="w-72 shrink-0 space-y-4">
+      <aside className="w-76 shrink-0 bg-background/40 px-4 py-5 overflow-y-auto flex justify-center">
+        <div className="w-full max-w-68">
           {/* Download card */}
-          <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
             <Button className="w-full gap-2" onClick={startDownload} disabled={downloading || versions.length === 0}>
               {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               {downloading ? "准备下载..." : "下载模组"}
             </Button>
 
             {selectedVersion && (
-              <div className="text-xs text-muted-foreground space-y-1.5">
+              <div className="text-xs text-muted-foreground space-y-2">
                 <div className="flex justify-between">
                   <span>版本</span>
                   <span className="text-foreground">v{selectedVersion.version_number}</span>
@@ -434,12 +440,11 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Info card */}
-          <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">模组信息</h3>
-            <div className="text-xs space-y-2">
+            {/* Info card */}
+            <div className="border-t border-border pt-4 space-y-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">模组信息</h3>
+              <div className="text-xs space-y-2">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">游戏</span>
                 <span className="text-foreground">{mod.game?.name || "未知"}</span>
@@ -460,10 +465,11 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
                 <span className="text-muted-foreground">发布日期</span>
                 <span className="text-foreground">{new Date(mod.created_at).toLocaleDateString()}</span>
               </div>
+              </div>
             </div>
           </div>
         </div>
+      </aside>
       </div>
-    </div>
   )
 }
