@@ -118,10 +118,11 @@ export function TopBar({
       }
     }
     
-    window.electronAPI?.onDeepLink?.(handler)
+    const unsubscribe = window.electronAPI?.onDeepLink?.(handler)
 
     return () => {
       unmounted = true
+      unsubscribe?.()
     }
   }, [])
 

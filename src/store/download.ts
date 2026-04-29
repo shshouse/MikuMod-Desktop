@@ -232,11 +232,17 @@ class DownloadStore {
     if (typeof window !== "undefined" && window.electronAPI) {
       const gameName = (task.game || "Unknown").replace(/[\\/:*?"<>|]/g, "_")
       let saveDir: string
+      const settings = getDesktopSettings()
       try {
-        const appDir = await window.electronAPI.getAppDir()
-        saveDir = `${appDir}\\mods\\${gameName}\\_system\\downloads`
+        if (settings.downloadDirectory) {
+          await window.electronAPI.authorizeDirectory(settings.downloadDirectory)
+          saveDir = `${settings.downloadDirectory}\\mods\\${gameName}`
+        } else {
+          const modsDir = await window.electronAPI.getAppModsDir()
+          saveDir = `${modsDir}\\${gameName}\\_system\\downloads`
+        }
       } catch {
-        saveDir = `${getDesktopSettings().downloadDirectory}\\mods\\${gameName}`
+        saveDir = `${settings.downloadDirectory || "downloads"}\\mods\\${gameName}`
       }
       void window.electronAPI.startDownload(task.url, task.id, task.fileName, saveDir)
     }

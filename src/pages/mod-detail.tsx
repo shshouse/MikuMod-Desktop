@@ -106,7 +106,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
     if (!mod) return
     setDownloading(true)
     try {
-      const tokenInfo = await getDownloadToken(mod.mod_number, selectedVersionId || undefined)
+      const tokenInfo = await getDownloadToken(mod.id, selectedVersionId || undefined)
       await useDownloadStore.getState().addDownload({
         id: `dl-${Date.now()}`,
         name: mod.title,

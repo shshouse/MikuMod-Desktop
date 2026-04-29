@@ -5,8 +5,52 @@ const fsPromises = require('fs/promises')
 const util = require('util')
 // child_process exec 转 Promise
 const exec = util.promisify(require('child_process').exec)
+const { loadEnvFiles } = require('./env-loader.cjs')
+
+loadEnvFiles({ app })
+
 const { registerAcceleratorIPC, cleanupOnExit } = require('./accelerator.cjs')
 const { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod } = require('./mod-manager.cjs')
+
+function getAppBaseDir() {
+  return app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : path.resolve(__dirname, '..')
+}
+
+function canWriteDirectory(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true })
+    const testPath = path.join(dirPath, `.write-test-${process.pid}`)
+    fs.writeFileSync(testPath, 'ok')
+    fs.unlinkSync(testPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function initializeDesktopPaths() {
+  const appDir = getAppBaseDir()
+  const preferredDataDir = path.join(appDir, 'data')
+  const fallbackDataDir = app.getPath('userData')
+  const dataDir = canWriteDirectory(preferredDataDir) ? preferredDataDir : fallbackDataDir
+  const logsDir = path.join(dataDir, 'logs')
+  const preferredModsDir = path.join(appDir, 'mods')
+  const modsDir = canWriteDirectory(preferredModsDir) ? preferredModsDir : path.join(dataDir, 'mods')
+
+  fs.mkdirSync(dataDir, { recursive: true })
+  fs.mkdirSync(logsDir, { recursive: true })
+  fs.mkdirSync(modsDir, { recursive: true })
+  app.setPath('userData', dataDir)
+  app.setPath('logs', logsDir)
+
+  return { appDir, dataDir, logsDir, modsDir }
+}
+
+const desktopPaths = initializeDesktopPaths()
+const authorizedBaseDirs = new Set()
+loadAuthorizedBaseDirs()
 
 // === Auto-update (electron-updater) ===
 let autoUpdater = null
@@ -87,6 +131,9 @@ function writeStructuredLog(level, message, context, error) {
   } else {
     console.log(line)
   }
+  try {
+    fs.appendFileSync(path.join(desktopPaths.logsDir, 'main.log'), line + '\n', 'utf-8')
+  } catch {}
 }
 
 const ALLOWED_HTTP_DOMAINS = new Set([
@@ -109,19 +156,74 @@ function isAllowedHttpDomain(url) {
   }
 }
 
+function getAuthorizedBaseDirsPath() {
+  return path.join(desktopPaths.dataDir, 'authorized-base-dirs.json')
+}
+
+function normalizeBaseDir(dirPath) {
+  if (typeof dirPath !== 'string' || !dirPath.trim()) {
+    return null
+  }
+
+  const normalized = path.normalize(path.resolve(dirPath))
+  if (normalized === path.parse(normalized).root) {
+    return null
+  }
+
+  return normalized
+}
+
+function loadAuthorizedBaseDirs() {
+  try {
+    const content = fs.readFileSync(getAuthorizedBaseDirsPath(), 'utf-8')
+    const entries = JSON.parse(content)
+    if (!Array.isArray(entries)) {
+      return
+    }
+
+    for (const entry of entries) {
+      const normalized = normalizeBaseDir(entry)
+      if (normalized) {
+        authorizedBaseDirs.add(normalized)
+      }
+    }
+  } catch {}
+}
+
+function saveAuthorizedBaseDirs() {
+  try {
+    fs.writeFileSync(getAuthorizedBaseDirsPath(), JSON.stringify([...authorizedBaseDirs].sort(), null, 2), 'utf-8')
+  } catch {}
+}
+
+function authorizeBaseDir(dirPath) {
+  const normalized = normalizeBaseDir(dirPath)
+  if (!normalized) {
+    return null
+  }
+
+  authorizedBaseDirs.add(normalized)
+  saveAuthorizedBaseDirs()
+  return normalized
+}
+
 function getSafeBaseDirs() {
-  const appDir = app.isPackaged
-    ? path.dirname(app.getPath('exe'))
-    : path.resolve(__dirname, '..')
   return [
-    path.normalize(appDir),
+    path.normalize(desktopPaths.appDir),
+    path.normalize(desktopPaths.dataDir),
+    path.normalize(desktopPaths.modsDir),
     path.normalize(app.getPath('userData')),
     path.normalize(app.getPath('downloads')),
     path.normalize(app.getPath('temp')),
+    ...authorizedBaseDirs,
   ]
 }
 
 function isPathAllowed(targetPath) {
+  if (typeof targetPath !== 'string' || !targetPath.trim()) {
+    return false
+  }
+
   const normalized = path.normalize(path.resolve(targetPath))
   const baseDirs = getSafeBaseDirs()
   return baseDirs.some(base => normalized.startsWith(base + path.sep) || normalized === base)
@@ -437,9 +539,34 @@ function createWindow() {
 
 // 获取 app 运行目录
 ipcMain.handle('get-app-dir', () => {
-  return app.isPackaged
-    ? path.dirname(app.getPath('exe'))
-    : path.resolve(__dirname, '..')
+  return desktopPaths.appDir
+})
+
+ipcMain.handle('get-app-data-dir', () => {
+  return desktopPaths.dataDir
+})
+
+ipcMain.handle('get-app-mods-dir', () => {
+  return desktopPaths.modsDir
+})
+
+ipcMain.handle('authorize-directory', async (_e, dirPath) => {
+  try {
+    const normalized = normalizeBaseDir(dirPath)
+    if (!normalized) {
+      return false
+    }
+
+    const stat = await fsPromises.stat(normalized)
+    if (!stat.isDirectory()) {
+      return false
+    }
+
+    authorizeBaseDir(normalized)
+    return true
+  } catch {
+    return false
+  }
 })
 
 // 选择目录
@@ -448,7 +575,13 @@ ipcMain.handle('select-directory', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory']
     })
-    return result.canceled ? null : result.filePaths[0]
+    if (result.canceled) {
+      return null
+    }
+
+    const selectedPath = result.filePaths[0]
+    authorizeBaseDir(selectedPath)
+    return selectedPath
   } catch (error) {
     console.error('select-directory error:', error)
     return null
@@ -464,7 +597,13 @@ ipcMain.handle('select-mod-file', async () => {
         { name: '所有文件', extensions: ['*'] },
       ],
     })
-    return result.canceled ? null : result.filePaths[0]
+    if (result.canceled) {
+      return null
+    }
+
+    const selectedPath = result.filePaths[0]
+    authorizeBaseDir(path.dirname(selectedPath))
+    return selectedPath
   } catch (error) {
     console.error('select-mod-file error:', error)
     return null
@@ -648,7 +787,7 @@ ipcMain.handle('delete-file', async (_e, filePath) => {
 
 ipcMain.handle('managed-mods-list', async (_e, input) => {
   try {
-    return await listManagedMods(app, input)
+    return await listManagedMods(app, input, desktopPaths.modsDir)
   } catch (error) {
     console.error('managed-mods-list error:', error)
     throw new Error(error.message || '获取模组列表失败')
@@ -657,7 +796,11 @@ ipcMain.handle('managed-mods-list', async (_e, input) => {
 
 ipcMain.handle('managed-mods-import-external', async (_e, input) => {
   try {
-    return await importExternalMod(app, input)
+    if (!isPathAllowed(input?.sourcePath)) {
+      throw new Error('导入源不在允许列表中')
+    }
+
+    return await importExternalMod(app, input, desktopPaths.modsDir)
   } catch (error) {
     console.error('managed-mods-import-external error:', error)
     throw new Error(error.message || '导入模组失败')
@@ -666,7 +809,11 @@ ipcMain.handle('managed-mods-import-external', async (_e, input) => {
 
 ipcMain.handle('managed-mods-import-download', async (_e, input) => {
   try {
-    return await importDownloadedArchive(app, input)
+    if (!isPathAllowed(input?.sourcePath)) {
+      throw new Error('下载文件不在允许列表中')
+    }
+
+    return await importDownloadedArchive(app, input, desktopPaths.modsDir)
   } catch (error) {
     console.error('managed-mods-import-download error:', error)
     throw new Error(error.message || '导入下载模组失败')
@@ -675,7 +822,11 @@ ipcMain.handle('managed-mods-import-download', async (_e, input) => {
 
 ipcMain.handle('managed-mods-install', async (_e, input) => {
   try {
-    return await installManagedMod(app, input)
+    if (!isPathAllowed(input?.gamePath)) {
+      throw new Error('游戏目录不在允许列表中')
+    }
+
+    return await installManagedMod(app, input, desktopPaths.modsDir)
   } catch (error) {
     console.error('managed-mods-install error:', error)
     return { ok: false, error: error.message || '安装失败', conflicts: [], installedPaths: 0 }
@@ -684,7 +835,11 @@ ipcMain.handle('managed-mods-install', async (_e, input) => {
 
 ipcMain.handle('managed-mods-uninstall', async (_e, input) => {
   try {
-    return await uninstallManagedMod(app, input)
+    if (!isPathAllowed(input?.gamePath)) {
+      throw new Error('游戏目录不在允许列表中')
+    }
+
+    return await uninstallManagedMod(app, input, desktopPaths.modsDir)
   } catch (error) {
     console.error('managed-mods-uninstall error:', error)
     return { ok: false, error: error.message || '卸载失败', restoredPaths: 0 }
@@ -717,10 +872,12 @@ ipcMain.handle('scan-steam-games', async () => {
           const name = parseVdfValue(content, 'name')
           const installDir = parseVdfValue(content, 'installdir')
           if (appId && installDir) {
+            const installPath = path.join(steamapps, 'common', installDir)
+            authorizeBaseDir(installPath)
             results.push({
               appId,
               name: name || installDir,
-              installPath: path.join(steamapps, 'common', installDir),
+              installPath,
             })
           }
         } catch {}
@@ -743,6 +900,10 @@ ipcMain.handle('start-download', async (_event, url, downloadId, fileName, saveD
 
     if (!isAllowedHttpDomain(url)) {
       throw new Error('下载地址不在允许列表中')
+    }
+
+    if (saveDir && !isPathAllowed(saveDir)) {
+      throw new Error('下载目录不在允许列表中')
     }
 
     setupDownloadSessionHandlers(mainWindow)
@@ -782,6 +943,10 @@ ipcMain.handle('resume-download', async (_e, downloadId, resumeData) => {
 
     if (!resumeData || !resumeData.path || !Array.isArray(resumeData.urlChain) || resumeData.urlChain.length === 0) {
       throw new Error('缺少可恢复的下载信息')
+    }
+
+    if (!isPathAllowed(resumeData.path)) {
+      throw new Error('恢复下载路径不在允许列表中')
     }
 
     for (const resumeUrl of resumeData.urlChain) {

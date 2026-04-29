@@ -10,6 +10,15 @@ export function getApiBase() {
   return import.meta.env.VITE_API_BASE_URL || 'https://mikumod.com/api'
 }
 
+function resolveApiBase(apiBaseOverride?: string) {
+  if (!apiBaseOverride?.trim()) {
+    return getApiBase()
+  }
+
+  const normalized = apiBaseOverride.trim().replace(/\/+$/, '')
+  return normalized.endsWith('/api') ? normalized : `${normalized}/api`
+}
+
 export interface GameSummary {
   id: string
   name: string
@@ -106,8 +115,8 @@ export async function fetchMods(params: { q?: string; page?: number; limit?: num
   return json.data // { mods, total }
 }
 
-export async function getDownloadToken(modId: string, versionId?: string) {
-  const url = new URL(`${getApiBase()}/mods/${modId}/download`)
+export async function getDownloadToken(modId: string, versionId?: string, apiBaseOverride?: string) {
+  const url = new URL(`${resolveApiBase(apiBaseOverride)}/mods/${modId}/download`)
   if (versionId) url.searchParams.set('version_id', versionId)
   
   const json = await requestJson<{ success: boolean; error?: string; data: { url: string; fileName?: string; fileSize?: number; version?: string; expiresAt?: number } }>(url.toString(), { timeoutMs: 12000 })
@@ -260,41 +269,18 @@ export interface PostLikeStatus {
 // === Mod Detail ===
 
 export async function fetchModDetail(modNumber: string): Promise<ModDetailResponse | null> {
-  // We use the search endpoint with a workaround — but actually we can use supabase directly
-  // since the desktop has supabase client. Let's use it for richer data.
-  const { supabase: sb } = await import('./supabase')
+  const url = `${getApiBase()}/mods/${encodeURIComponent(modNumber)}/detail`
+  const json = await requestJson<{ success: boolean; error?: string; data?: ModDetailResponse }>(url, { timeoutMs: 12000 })
 
-  const { data: mods } = await sb
-    .from('mod')
-    .select('*,game:games(id,name,game_number),author:users!mod_author_id_fkey(id,user_number,username,avatar_url,bio)')
-    .eq('mod_number', modNumber)
-    .eq('status', 'approved')
-    .limit(1)
+  if (!json.success) {
+    if (json.error?.includes("不存在") || json.error?.includes("未通过审核")) {
+      return null
+    }
 
-  const mod = (mods as ModDetailSummary[] | null)?.[0]
-  if (!mod) return null
-
-  const [versionsRes, reviewsRes] = await Promise.all([
-    sb
-      .from('mod_versions')
-      .select('*')
-      .eq('mod_id', mod.id)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false }),
-    sb
-      .from('mod_reviews')
-      .select('*,user:users!mod_reviews_user_id_fkey(id,user_number,username,avatar_url)')
-      .eq('mod_id', mod.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(20),
-  ])
-
-  return {
-    mod,
-    versions: (versionsRes.data as ModVersionSummary[] | null) || [],
-    reviews: (reviewsRes.data as ModReviewSummary[] | null) || [],
+    throw new Error(json.error || 'Failed to fetch mod detail')
   }
+
+  return json.data || null
 }
 
 // === Post Detail ===

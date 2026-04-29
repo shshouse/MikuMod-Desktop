@@ -9,6 +9,8 @@ import { useDownloadStore } from "@/store/download"
 export function SettingsPage() {
   const [settings, setSettings] = useState(() => getDesktopSettings())
   const [savedMessage, setSavedMessage] = useState("")
+  const [defaultDownloadRoot, setDefaultDownloadRoot] = useState("")
+  const [appDataDir, setAppDataDir] = useState("")
 
   // Auto-update state
   const [appVersion, setAppVersion] = useState("")
@@ -20,6 +22,8 @@ export function SettingsPage() {
   useEffect(() => {
     // Get app version
     window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
+    window.electronAPI?.getAppModsDir?.().then((dir) => setDefaultDownloadRoot(dir)).catch(() => setDefaultDownloadRoot(""))
+    window.electronAPI?.getAppDataDir?.().then((dir) => setAppDataDir(dir)).catch(() => setAppDataDir(""))
 
     // Listen for updater events
     window.electronAPI?.onUpdaterEvent?.((data) => {
@@ -88,6 +92,10 @@ export function SettingsPage() {
     window.setTimeout(() => setSavedMessage(""), 1500)
   }
 
+  const resetDownloadDirectory = () => {
+    updateSettings({ ...settings, downloadDirectory: "" })
+  }
+
   const logout = async () => {
     await supabase.auth.signOut()
     setSavedMessage("已退出登录")
@@ -117,18 +125,40 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground/90">默认下载目录</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">模组下载和缓存文件默认保存位置</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">留空时保存到右侧显示的默认 mods 目录</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1.5 rounded-md border border-border max-w-80 truncate">
-                  {settings.downloadDirectory}
+                  {settings.downloadDirectory || defaultDownloadRoot || "默认 mods 目录"}
                 </span>
+                {settings.downloadDirectory && (
+                  <Button variant="ghost" size="sm" className="h-8" onClick={resetDownloadDirectory}>
+                    恢复默认
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" className="h-8" onClick={() => void changeDownloadDirectory()}>
                   更改
                 </Button>
               </div>
             </div>
+
+            {appDataDir && (
+              <div className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
+                <div className="flex gap-4 items-center">
+                  <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0">
+                    <FolderOpen className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground/90">应用数据目录</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">日志、缓存和本地状态优先保存在应用数据目录下</p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1.5 rounded-md border border-border max-w-80 truncate">
+                  {appDataDir}
+                </span>
+              </div>
+            )}
 
             <div className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
               <div className="flex gap-4 items-center">

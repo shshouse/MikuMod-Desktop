@@ -195,8 +195,8 @@ async function resolveContentRoot(extractDir) {
   return currentDir
 }
 
-function getGameDirs(app, gameName) {
-  const rootDir = path.join(getAppBaseDir(app), 'mods')
+function getGameDirs(app, gameName, modsRootDir) {
+  const rootDir = path.resolve(modsRootDir || path.join(getAppBaseDir(app), 'mods'))
   const gameFolder = sanitizeSegment(gameName)
   const gameDir = path.join(rootDir, gameFolder)
   const systemDir = path.join(gameDir, '_system')
@@ -462,8 +462,8 @@ function resolveImportName(input) {
   return ext ? baseName.slice(0, -ext.length) : baseName
 }
 
-async function importExternalMod(app, input) {
-  const dirs = getGameDirs(app, input.gameName)
+async function importExternalMod(app, input, modsRootDir) {
+  const dirs = getGameDirs(app, input.gameName, modsRootDir)
   const state = await loadState(dirs, input.gameId, input.gameName)
   const isArchive = input.sourceType === 'archive' || input.sourceType === 'download'
 
@@ -554,8 +554,8 @@ async function importExternalMod(app, input) {
   }
 }
 
- async function listManagedMods(app, input) {
-   const dirs = getGameDirs(app, input.gameName)
+ async function listManagedMods(app, input, modsRootDir) {
+   const dirs = getGameDirs(app, input.gameName, modsRootDir)
    const state = await loadState(dirs, input.gameId, input.gameName)
    const cache = new Map()
    const summaries = []
@@ -650,8 +650,8 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
    }
  }
 
- async function installManagedMod(app, input) {
-   const dirs = getGameDirs(app, input.gameName)
+ async function installManagedMod(app, input, modsRootDir) {
+   const dirs = getGameDirs(app, input.gameName, modsRootDir)
    const state = await loadState(dirs, input.gameId, input.gameName)
    const modRecord = state.mods[input.modId]
 
@@ -733,8 +733,8 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
    }
  }
 
- async function uninstallManagedMod(app, input) {
-   const dirs = getGameDirs(app, input.gameName)
+ async function uninstallManagedMod(app, input, modsRootDir) {
+   const dirs = getGameDirs(app, input.gameName, modsRootDir)
    const state = await loadState(dirs, input.gameId, input.gameName)
    const modRecord = state.mods[input.modId]
 
@@ -797,8 +797,8 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
    }
  }
 
- async function importDownloadedArchive(app, input) {
-   const dirs = getGameDirs(app, input.gameName)
+ async function importDownloadedArchive(app, input, modsRootDir) {
+   const dirs = getGameDirs(app, input.gameName, modsRootDir)
    await ensureGameDirs(dirs)
    const archiveName = sanitizeSegment(input.fileName || path.basename(input.sourcePath) || `${input.modName || 'mod'}.zip`)
    const ext = path.extname(archiveName) || path.extname(input.sourcePath) || '.zip'
@@ -817,7 +817,7 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
      modName: input.modName,
      platformModId: input.platformModId,
      platformVersionId: input.platformVersionId,
-   })
+   }, modsRootDir)
  }
 
  module.exports = {

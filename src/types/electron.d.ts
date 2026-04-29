@@ -36,6 +36,9 @@ export interface DownloadResumeData {
 
 export interface ElectronAPI {
   getAppDir: () => Promise<string>
+  getAppDataDir: () => Promise<string>
+  getAppModsDir: () => Promise<string>
+  authorizeDirectory: (path: string) => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   selectModFile: () => Promise<string | null>
   openDirectory: (path: string) => Promise<void>
@@ -60,7 +63,7 @@ export interface ElectronAPI {
   maximize: () => Promise<void>
   close: () => Promise<void>
   isMaximized: () => Promise<boolean>
-  onDeepLink: (callback: (url: string) => void) => void
+  onDeepLink: (callback: (url: string) => void) => () => void
   onDownloadEvent: (callback: (data: {
     id: string
     status: "downloading" | "paused" | "done" | "error"
@@ -90,6 +93,7 @@ export interface ElectronAPI {
   acceleratorResolveAll: (domains: unknown[]) => Promise<Record<string, string>>
   acceleratorStart: (enabledDomains: unknown[]) => Promise<{ success: boolean; error?: string; hostsMap?: Record<string, string> }>
   acceleratorStop: () => Promise<{ success: boolean; error?: string }>
+  acceleratorRepair: () => Promise<{ success: boolean; error?: string }>
   acceleratorCheckHosts: () => Promise<boolean>
   acceleratorPing: (ip: string) => Promise<number | null>
   acceleratorPingBoth: (domain: string, ip: string) => Promise<{ before: number | null, after: number | null }>

@@ -1,8 +1,42 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+const deepLinkListeners = new Set()
+const pendingDeepLinks = []
+let deepLinkFlushScheduled = false
+
+function dispatchDeepLink(url) {
+  for (const listener of deepLinkListeners) {
+    listener(url)
+  }
+}
+
+function schedulePendingDeepLinkFlush() {
+  if (deepLinkFlushScheduled) return
+  deepLinkFlushScheduled = true
+  setTimeout(() => {
+    deepLinkFlushScheduled = false
+    const links = pendingDeepLinks.splice(0)
+    for (const url of links) {
+      dispatchDeepLink(url)
+    }
+  }, 0)
+}
+
+ipcRenderer.on('deep-link', (_e, url) => {
+  if (deepLinkListeners.size === 0) {
+    pendingDeepLinks.push(url)
+    return
+  }
+
+  dispatchDeepLink(url)
+})
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // 文件系统
   getAppDir: () => ipcRenderer.invoke('get-app-dir'),
+  getAppDataDir: () => ipcRenderer.invoke('get-app-data-dir'),
+  getAppModsDir: () => ipcRenderer.invoke('get-app-mods-dir'),
+  authorizeDirectory: (path) => ipcRenderer.invoke('authorize-directory', path),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   selectModFile: () => ipcRenderer.invoke('select-mod-file'),
   openDirectory: (path) => ipcRenderer.invoke('open-directory', path),
@@ -35,7 +69,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Deep link
   onDeepLink: (callback) => {
-    ipcRenderer.on('deep-link', (_e, url) => callback(url))
+    deepLinkListeners.add(callback)
+    if (pendingDeepLinks.length > 0) {
+      schedulePendingDeepLinkFlush()
+    }
+    return () => deepLinkListeners.delete(callback)
   },
 
   // 下载进度和控制
@@ -60,6 +98,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   acceleratorResolveAll: (domains) => ipcRenderer.invoke('accelerator-resolve-all', domains),
   acceleratorStart: (enabledDomains) => ipcRenderer.invoke('accelerator-start', enabledDomains),
   acceleratorStop: () => ipcRenderer.invoke('accelerator-stop'),
+  acceleratorRepair: () => ipcRenderer.invoke('accelerator-repair'),
   acceleratorCheckHosts: () => ipcRenderer.invoke('accelerator-check-hosts'),
   acceleratorPing: (ip) => ipcRenderer.invoke('accelerator-ping', ip),
   acceleratorPingBoth: (domain, ip) => ipcRenderer.invoke('accelerator-ping-both', domain, ip),

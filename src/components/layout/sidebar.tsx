@@ -2,7 +2,6 @@ import { cn } from "@/lib/utils"
 import {
   Gamepad2,
   Download,
-  LayoutDashboard,
   MessageSquare,
   Settings,
   Search,
@@ -27,7 +26,6 @@ const topNavItems = [
   { id: "games", label: "游戏", icon: Gamepad2 },
   { id: "downloads", label: "下载", icon: Download },
   { id: "accelerator", label: "加速", icon: Zap },
-  { id: "modder-dashboard", label: "创作", icon: LayoutDashboard },
 ]
 
 const bottomNavItems = [
