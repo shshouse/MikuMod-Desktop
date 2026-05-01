@@ -9,7 +9,7 @@ const http = require('http')
 const https = require('https')
 const crypto = require('crypto')
 const forge = require('node-forge')
-const { getEnvFileCandidates, loadEnvFiles } = require('./env-loader.cjs')
+const { loadEnvFiles } = require('./env-loader.cjs')
 
 // === 常量 ===
 const HOSTS_PATH = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
@@ -68,11 +68,6 @@ function getWorkerRelayConfig() {
   }
 }
 
-function getWorkerRelayMissingConfigMessage(relayDomains) {
-  const envPaths = getEnvFileCandidates(app).slice(0, 4).join('、')
-  return `所选域名包含必须走中转的站点：${relayDomains.slice(0, 3).join('、')}${relayDomains.length > 3 ? ' 等' : ''}。请在 .env 中配置 WORKER_RELAY_URL 和 WORKER_RELAY_SECRET 后重新开启加速。可读取位置：${envPaths}`
-}
-
 function needsWorkerRelay(domain) {
   if (WORKER_RELAY_DOMAINS.has(domain)) return true
   for (const d of WORKER_RELAY_DOMAINS) {
@@ -86,6 +81,10 @@ function findDomainsRequiringWorkerRelay(domains) {
     .map(d => normalizeDomain(d.match_domain))
     .filter(Boolean)
     .filter(domain => needsWorkerRelay(domain))
+}
+
+function getWorkerRelaySkippedMessage(relayDomains) {
+  return `已跳过需要 Worker Relay 的域名：${relayDomains.slice(0, 3).join('、')}${relayDomains.length > 3 ? ' 等' : ''}`
 }
 
 let acceleratorState = {
@@ -1190,10 +1189,16 @@ function registerAcceleratorIPC() {
 
       const relayConfig = getWorkerRelayConfig()
       const relayDomains = findDomainsRequiringWorkerRelay(safeDomains)
-      if (relayDomains.length > 0 && (!relayConfig.url || !relayConfig.secret)) {
+      const skipRelayDomains = relayDomains.length > 0 && (!relayConfig.url || !relayConfig.secret)
+      const startupDomains = skipRelayDomains
+        ? safeDomains.filter(d => !needsWorkerRelay(d.match_domain))
+        : safeDomains
+      const warning = skipRelayDomains ? getWorkerRelaySkippedMessage(relayDomains) : ''
+      if (startupDomains.length === 0) {
         return {
           success: false,
-          error: getWorkerRelayMissingConfigMessage(relayDomains),
+          warning,
+          skippedDomains: relayDomains,
         }
       }
 
@@ -1218,7 +1223,7 @@ function registerAcceleratorIPC() {
       }
 
       // 3. DoH 解析
-      const toResolve = safeDomains.filter(d => !d.forward_ip)
+      const toResolve = startupDomains.filter(d => !d.forward_ip)
       const results = {}
       const candidateResults = {}
       await Promise.all(toResolve.map(async (d) => {
@@ -1240,14 +1245,14 @@ function registerAcceleratorIPC() {
           candidateResults[d.match_domain] = candidates
         }
       }))
-      safeDomains.forEach(d => {
+      startupDomains.forEach(d => {
         if (d.forward_ip) {
           results[d.match_domain] = d.forward_ip
           candidateResults[d.match_domain] = [d.forward_ip]
         }
       })
 
-      const domainList = safeDomains
+      const domainList = startupDomains
         .filter(d => results[d.match_domain])
         .map(d => d.match_domain)
 
@@ -1277,7 +1282,7 @@ function registerAcceleratorIPC() {
 
       const hostsMap = {}
       domainList.forEach(d => { hostsMap[d] = acceleratorState.resolved[d] })
-      return { success: true, hostsMap }
+      return { success: true, hostsMap, warning, skippedDomains: skipRelayDomains ? relayDomains : [] }
     } catch (e) {
       removeHosts()
       await stopProxyServer()

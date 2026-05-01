@@ -94,17 +94,6 @@ const LEGACY_RELAY_DEFAULT_DOMAINS = new Set([
   "media.githubusercontent.com",
   "camo.githubusercontent.com",
 ])
-const SENSITIVE_ACCELERATOR_DOMAINS = new Set([
-  "github.com",
-  "github.dev",
-  "api.github.com",
-  "gist.github.com",
-  "copilot.github.com",
-  "uploads.github.com",
-  "store.steampowered.com",
-  "steamcommunity.com",
-  "login.steampowered.com",
-])
 
 // 提取辅助函数以避免每次渲染时重建
 const getRootItems = (groupDomains: AccelerateDomain[]) =>
@@ -196,6 +185,7 @@ export function AcceleratorPage() {
   const [resolving, setResolving] = useState(false)
   const [repairing, setRepairing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({})
   const [latencies, setLatencies] = useState<Record<string, { before: number | null; after: number | null } | null>>({})
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
@@ -338,11 +328,6 @@ export function AcceleratorPage() {
     domains.filter(d => checkedItems[d.id] && !d.match_domain.includes("/")),
   [domains, checkedItems])
 
-  const enabledSensitiveDomains = useMemo(
-    () => getEnabledDomains().filter(d => SENSITIVE_ACCELERATOR_DOMAINS.has(d.match_domain)),
-    [getEnabledDomains]
-  )
-
   // 4. 重构测速逻辑，使用 Promise.allSettled 避免测速按钮状态过早重置
   const resolveAll = async () => {
     setResolving(true)
@@ -373,6 +358,7 @@ export function AcceleratorPage() {
   const startAccelerator = async () => {
     setStarting(true)
     setError(null)
+    setNotice(null)
     const enabledDomains = getEnabledDomains()
     if (enabledDomains.length === 0) {
       setError("请至少选择一个加速项目")
@@ -385,6 +371,9 @@ export function AcceleratorPage() {
         setRunning(true)
         setHasResidual(true)
         if (result.hostsMap) setResolved(prev => ({ ...prev, ...result.hostsMap }))
+        setNotice(result.warning || null)
+      } else if (result?.warning) {
+        setNotice(result.warning)
       } else {
         setError(result?.error || "启动失败")
       }
@@ -398,6 +387,7 @@ export function AcceleratorPage() {
   const stopAccelerator = async () => {
     setStarting(true)
     setError(null)
+    setNotice(null)
     try {
       const result = await window.electronAPI?.acceleratorStop()
       if (result?.success) {
@@ -417,6 +407,7 @@ export function AcceleratorPage() {
   const repairAccelerator = async () => {
     setRepairing(true)
     setError(null)
+    setNotice(null)
     try {
       const result = await window.electronAPI?.acceleratorRepair()
       if (result?.success) {
@@ -518,16 +509,16 @@ export function AcceleratorPage() {
             {error}
           </div>
         )}
+        {notice && (
+          <div className="mt-3 px-3 py-2 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-zinc-300 text-xs flex items-center gap-2">
+            <Shield className="w-3.5 h-3.5 shrink-0" />
+            {notice}
+          </div>
+        )}
         {hasResidual && !running && (
           <div className="mt-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs flex items-center gap-2">
             <Shield className="w-3.5 h-3.5 shrink-0" />
             检测到残留加速条目，建议点击“清理残留”或“网络修复”恢复系统网络
-          </div>
-        )}
-        {enabledSensitiveDomains.length > 0 && !running && (
-          <div className="mt-3 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs flex items-center gap-2">
-            <Shield className="w-3.5 h-3.5 shrink-0" />
-            已选择 {enabledSensitiveDomains.length} 个账号/主站域名。启动后会安装本地根证书并接管这些 HTTPS 访问，建议仅在确有需要时启用
           </div>
         )}
       </div>
@@ -727,13 +718,6 @@ export function AcceleratorPage() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* 底栏 */}
-      <div className="shrink-0 px-6 py-2.5 border-t border-zinc-700/30 bg-zinc-900/50">
-        <p className="text-[11px] text-zinc-600">
-          启动后会写入 hosts 并安装本地根证书；停止时会优先清理 hosts，网络修复会同时移除证书信任。
-        </p>
       </div>
     </div>
   )
