@@ -288,7 +288,7 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
                   {formatDistanceToNow(new Date(reply.created_at), { locale: zhCN, addSuffix: true })}
                 </span>
               </div>
-              {reply.parent_id && reply.reply_to_user && (
+              {reply.parent_reply_id && reply.reply_to_user && (
                 <p className="text-[10px] text-muted-foreground mt-1">回复 @{reply.reply_to_user?.username}</p>
               )}
               <p className="text-sm text-foreground/80 mt-2 whitespace-pre-wrap">{reply.content}</p>

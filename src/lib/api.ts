@@ -257,7 +257,8 @@ export interface PostReplySummary {
   id: string | number
   content: string
   created_at: string
-  parent_id?: string | number | null
+  // post_replies 实际列名：parent_reply_id（楼中楼指向父回复的 ID）
+  parent_reply_id?: string | number | null
   reply_to_user?: PostUserSummary | null
   user?: PostUserSummary | null
 }
@@ -320,9 +321,10 @@ export async function togglePostLike(postId: string): Promise<PostLikeStatus> {
   return data // { liked, count }
 }
 
-export async function submitPostReply(postId: string, content: string, parentId?: string | number) {
+export async function submitPostReply(postId: string, content: string, parentReplyId?: string | number) {
   const body: Record<string, unknown> = { content }
-  if (parentId) body.parent_id = parentId
+  // 主站 /community/posts/[id]/replies POST 接收字段名为 reply_to_id
+  if (parentReplyId) body.reply_to_id = parentReplyId
 
   const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/replies`, {
     method: 'POST',
