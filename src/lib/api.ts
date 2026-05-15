@@ -193,7 +193,6 @@ export interface ModDetailSummary {
   id: string
   mod_number: string
   title: string
-  summary?: string | null
   description?: string | null
   thumbnail_url?: string | null
   image_urls?: string[] | null

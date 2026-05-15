@@ -218,7 +218,6 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
               ))}
             </div>
             <h1 className="text-2xl font-bold tracking-tight mt-2">{mod.title}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{mod.summary}</p>
           </div>
 
           {/* Author */}
@@ -290,7 +289,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
           {activeTab === "description" && (
             <div className="prose prose-invert prose-sm max-w-none">
               <div className="whitespace-pre-wrap text-sm text-foreground/80 leading-relaxed">
-                {mod.description || mod.summary || "暂无详细描述"}
+                {mod.description || "暂无详细描述"}
               </div>
             </div>
           )}
