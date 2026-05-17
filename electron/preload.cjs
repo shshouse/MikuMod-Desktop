@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updaterCheck: () => ipcRenderer.invoke('updater-check'),
   updaterDownload: () => ipcRenderer.invoke('updater-download'),
   updaterInstall: () => ipcRenderer.invoke('updater-install'),
+  updaterGetChannel: () => ipcRenderer.invoke('updater-get-channel'),
+  updaterSetChannel: (channel) => ipcRenderer.invoke('updater-set-channel', channel),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   onUpdaterEvent: (callback) => {
     ipcRenderer.on('updater-event', (_e, data) => callback(data))

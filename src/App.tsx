@@ -18,6 +18,7 @@ import { UserProfilePage } from "@/pages/user-profile"
 import { NotificationsPage } from "@/pages/notifications"
 import { showToast } from "@/lib/toast"
 import { ToastViewport } from "@/components/toast-viewport"
+import { ForceUpdateGate } from "@/components/force-update-gate"
 
 const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
 
@@ -206,26 +207,28 @@ function App() {
   }, [activeTab, searchQuery, localPaths, customGames, platformGames, persistPaths, handleSetPath, navigateTo, handleBack])
 
   return (
-    <div className="dark h-screen w-screen flex overflow-hidden bg-background text-foreground">
-      <Sidebar activeTab={activeTab} onTabChange={navigateTo} installedGames={installedGames} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBar
-          activeTab={activeTab}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onBack={handleBack}
-          onForward={handleForward}
-          onNavigate={navigateTo}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-        />
-        <main className="flex-1 overflow-hidden">
-          {currentPage}
-        </main>
+    <ForceUpdateGate>
+      <div className="dark h-screen w-screen flex overflow-hidden bg-background text-foreground">
+        <Sidebar activeTab={activeTab} onTabChange={navigateTo} installedGames={installedGames} />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <TopBar
+            activeTab={activeTab}
+            canGoBack={canGoBack}
+            canGoForward={canGoForward}
+            onBack={handleBack}
+            onForward={handleForward}
+            onNavigate={navigateTo}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
+          <main className="flex-1 overflow-hidden">
+            {currentPage}
+          </main>
+        </div>
+        <WindowControls />
+        <ToastViewport />
       </div>
-      <WindowControls />
-      <ToastViewport />
-    </div>
+    </ForceUpdateGate>
   )
 }
 

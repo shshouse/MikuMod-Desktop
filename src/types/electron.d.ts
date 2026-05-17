@@ -56,6 +56,8 @@ export interface ElectronAPI {
   updaterCheck: () => Promise<{ available: boolean; info?: UpdaterInfo; reason?: string }>
   updaterDownload: () => Promise<boolean>
   updaterInstall: () => void
+  updaterGetChannel: () => Promise<'stable' | 'beta' | 'alpha'>
+  updaterSetChannel: (channel: 'stable' | 'beta' | 'alpha') => Promise<{ success: boolean }>
   getAppVersion: () => Promise<string>
   onUpdaterEvent: (callback: (data: { type: string; info?: UpdaterInfo; progress?: UpdaterProgress; error?: string }) => void) => void
 

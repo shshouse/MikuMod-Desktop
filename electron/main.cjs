@@ -1057,8 +1057,35 @@ ipcMain.handle('open-login-window', async (_e, loginUrl) => {
 })
 
 // === Auto-update IPC ===
+const ALLOWED_CHANNELS = new Set(['stable', 'beta', 'alpha'])
+
+function getChannelFile() {
+  return path.join(desktopPaths.dataDir, 'update-channel.txt')
+}
+
+function readChannel() {
+  try {
+    const v = fs.readFileSync(getChannelFile(), 'utf-8').trim()
+    if (ALLOWED_CHANNELS.has(v)) return v
+  } catch {}
+  return 'stable'
+}
+
+function writeChannel(channel) {
+  if (!ALLOWED_CHANNELS.has(channel)) return false
+  try {
+    fs.writeFileSync(getChannelFile(), channel, 'utf-8')
+    return true
+  } catch {
+    return false
+  }
+}
+
 function setupAutoUpdater() {
   if (!autoUpdater) return
+
+  autoUpdater.allowDowngrade = true
+  autoUpdater.channel = readChannel()
 
   autoUpdater.on('update-available', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1112,6 +1139,14 @@ ipcMain.handle('updater-install', () => {
 })
 
 ipcMain.handle('get-app-version', () => app.getVersion())
+
+ipcMain.handle('updater-get-channel', () => readChannel())
+
+ipcMain.handle('updater-set-channel', (_event, channel) => {
+  if (!writeChannel(channel)) return { success: false }
+  if (autoUpdater) autoUpdater.channel = channel
+  return { success: true }
+})
 
 app.whenReady().then(() => {
   try { registerAcceleratorIPC() } catch (err) { console.error("accelerator fallback:", err) }

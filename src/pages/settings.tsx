@@ -22,11 +22,13 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [updateInfo, setUpdateInfo] = useState<Awaited<ReturnType<ElectronAPI["updaterCheck"]>>["info"] | null>(null)
   const [updateProgress, setUpdateProgress] = useState(0)
   const [updateError, setUpdateError] = useState("")
+  const [updateChannel, setUpdateChannel] = useState<'stable' | 'beta' | 'alpha'>('stable')
 
   useEffect(() => {
     // Get app version
     window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
     window.electronAPI?.getAppModsDir?.().then((dir) => setDefaultDownloadRoot(dir)).catch(() => setDefaultDownloadRoot(""))
+    window.electronAPI?.updaterGetChannel?.().then((c) => setUpdateChannel(c || 'stable')).catch(() => {})
 
     // Listen for updater events
     window.electronAPI?.onUpdaterEvent?.((data) => {
@@ -110,7 +112,7 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
             <Sparkles className="w-4 h-4 text-purple-400" />
             <h3 className="text-sm font-medium">应用更新</h3>
           </div>
-          <div className="p-4">
+          <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground/90">当前版本</p>
@@ -190,6 +192,27 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                   </Button>
                 </div>
               )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border/50 pt-4">
+              <div>
+                <p className="text-sm font-medium text-foreground/90">更新通道</p>
+                <p className="text-xs text-muted-foreground mt-0.5">stable 为正式版，beta 为测试版，alpha 为开发预览</p>
+              </div>
+              <select
+                value={updateChannel}
+                onChange={async (e) => {
+                  const next = e.target.value as 'stable' | 'beta' | 'alpha'
+                  setUpdateChannel(next)
+                  await window.electronAPI?.updaterSetChannel?.(next)
+                  showToast({ message: `已切换到 ${next} 通道`, type: 'success' })
+                }}
+                className="h-8 text-sm bg-background border border-border rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="stable">stable（正式）</option>
+                <option value="beta">beta（测试）</option>
+                <option value="alpha">alpha（开发）</option>
+              </select>
             </div>
           </div>
         </div>
