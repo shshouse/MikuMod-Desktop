@@ -8,10 +8,11 @@ import {
   Settings,
   User,
 } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { fetchMyProfile, fetchUnreadNotifications } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
-import { supabase } from "@/lib/supabase"
+import { signOutDesktop, supabase } from "@/lib/supabase"
+import { showToast } from "@/lib/toast"
 
 interface TopBarProps {
   activeTab: string
@@ -36,6 +37,8 @@ export function TopBar({
 }: TopBarProps) {
   const [userProfile, setUserProfile] = useState<{ username: string; avatar_url: string | null } | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
 
   const loadNotifications = useCallback(async (isUnmounted = false) => {
     try {
@@ -90,8 +93,17 @@ export function TopBar({
       }
     })
 
+    const onSignedOut = () => {
+      setUserProfile(null)
+      setUnreadCount(0)
+      setShowUserMenu(false)
+    }
+
+    window.addEventListener("mikumod-auth-signed-out", onSignedOut)
+
     return () => {
       unmounted = true
+      window.removeEventListener("mikumod-auth-signed-out", onSignedOut)
       subscription.unsubscribe()
     }
   }, [loadNotifications])
@@ -138,8 +150,24 @@ export function TopBar({
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    setShowUserMenu(false)
+    showToast({ message: "退出登录中 (づ｡◕‿‿◕｡)づ", type: "info", duration: 1200 })
+    setUserProfile(null)
+    setUnreadCount(0)
+    await signOutDesktop()
+    showToast({ message: "已退出登录 (｀・ω・´)", type: "success" })
   }
+
+  useEffect(() => {
+    if (!showUserMenu) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside)
+    return () => document.removeEventListener("mousedown", onClickOutside)
+  }, [showUserMenu])
 
   const openWebPath = async (path: string) => {
     const settings = getDesktopSettings()
@@ -214,14 +242,14 @@ export function TopBar({
 
           <div className="w-px h-5 bg-border mx-1" />
 
-          <div className="flex items-center gap-2 group relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => {
                 if (!userProfile) {
                   handleLogin()
                   return
                 }
-                void openWebPath("/settings")
+                setShowUserMenu((v) => !v)
               }}
               className="flex items-center gap-2 px-2 py-1.5 rounded-full hover:bg-muted transition-colors"
             >
@@ -237,10 +265,10 @@ export function TopBar({
               </span>
             </button>
 
-            {userProfile && (
-              <div className="absolute right-0 top-full mt-1 w-32 hidden group-hover:flex flex-col bg-popover border border-border rounded-lg shadow-lg overflow-hidden z-50">
+            {showUserMenu && userProfile && (
+              <div className="absolute right-0 top-full mt-1 w-32 flex flex-col bg-popover border border-border rounded-lg shadow-lg overflow-hidden z-50">
                 <button
-                  onClick={handleLogout}
+                  onClick={() => void handleLogout()}
                   className="w-full text-left px-4 py-2 text-xs text-destructive hover:bg-muted flex items-center gap-2 transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />

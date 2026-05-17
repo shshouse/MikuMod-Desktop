@@ -1,16 +1,20 @@
-import { Download, FolderOpen, Loader2, LogOut, RefreshCcw, Server, Settings2, Sparkles } from "lucide-react"
+import { Download, FolderOpen, Loader2, LogOut, RefreshCcw, Settings2, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { getDesktopSettings, saveDesktopSettings } from "@/lib/desktop-config"
+import { getDesktopSettings } from "@/lib/desktop-config"
 import type { ElectronAPI } from "@/types/electron"
-import { supabase } from "@/lib/supabase"
+import { signOutDesktop } from "@/lib/supabase"
+import { showToast } from "@/lib/toast"
 import { useDownloadStore } from "@/store/download"
 
-export function SettingsPage() {
-  const [settings, setSettings] = useState(() => getDesktopSettings())
+interface SettingsPageProps {
+  onNavigate: (tab: string) => void
+}
+
+export function SettingsPage({ onNavigate }: SettingsPageProps) {
+  const [settings] = useState(() => getDesktopSettings())
   const [savedMessage, setSavedMessage] = useState("")
   const [defaultDownloadRoot, setDefaultDownloadRoot] = useState("")
-  const [appDataDir, setAppDataDir] = useState("")
 
   // Auto-update state
   const [appVersion, setAppVersion] = useState("")
@@ -23,7 +27,6 @@ export function SettingsPage() {
     // Get app version
     window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
     window.electronAPI?.getAppModsDir?.().then((dir) => setDefaultDownloadRoot(dir)).catch(() => setDefaultDownloadRoot(""))
-    window.electronAPI?.getAppDataDir?.().then((dir) => setAppDataDir(dir)).catch(() => setAppDataDir(""))
 
     // Listen for updater events
     window.electronAPI?.onUpdaterEvent?.((data) => {
@@ -50,56 +53,20 @@ export function SettingsPage() {
     })
   }, [])
 
-  const updateSettings = (nextSettings: typeof settings) => {
-    setSettings(nextSettings)
-    saveDesktopSettings(nextSettings)
-    setSavedMessage("设置已保存")
-    window.setTimeout(() => setSavedMessage(""), 1500)
-  }
-
-  const changeDownloadDirectory = async () => {
-    const selectedPath = await window.electronAPI?.selectDirectory()
-    if (!selectedPath) {
-      return
-    }
-
-    updateSettings({ ...settings, downloadDirectory: selectedPath })
-  }
-
-  const changeApiBaseUrl = () => {
-    const nextApiBaseUrl = window.prompt("请输入 API 基础地址", settings.apiBaseUrl)
-    if (!nextApiBaseUrl?.trim()) {
-      return
-    }
-
-    const normalizedApiBaseUrl = nextApiBaseUrl.trim().replace(/\/+$/, "")
-    const inferredWebBaseUrl = normalizedApiBaseUrl.endsWith("/api")
-      ? normalizedApiBaseUrl.replace(/\/api$/, "")
-      : settings.webBaseUrl
-
-    updateSettings({
-      ...settings,
-      apiBaseUrl: normalizedApiBaseUrl,
-      webBaseUrl: inferredWebBaseUrl,
-    })
-  }
-
   const clearLocalCache = () => {
     useDownloadStore.getState().reset()
     window.localStorage.removeItem("mikumod_local_paths")
     window.localStorage.removeItem("mikumod_desktop_custom_games")
     setSavedMessage("本地缓存已清理")
+    showToast({ message: "本地缓存已清理 (ﾉ>ω<)ﾉ", type: "success" })
     window.setTimeout(() => setSavedMessage(""), 1500)
-  }
-
-  const resetDownloadDirectory = () => {
-    updateSettings({ ...settings, downloadDirectory: "" })
   }
 
   const logout = async () => {
-    await supabase.auth.signOut()
-    setSavedMessage("已退出登录")
-    window.setTimeout(() => setSavedMessage(""), 1500)
+    showToast({ message: "退出登录中 (づ｡◕‿‿◕｡)づ", type: "info", duration: 1200 })
+    await signOutDesktop()
+    showToast({ message: "已退出登录 (｀・ω・´)", type: "success" })
+    onNavigate("mods")
   }
 
   return (
@@ -132,51 +99,6 @@ export function SettingsPage() {
                 <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1.5 rounded-md border border-border max-w-80 truncate">
                   {settings.downloadDirectory || defaultDownloadRoot || "默认 mods 目录"}
                 </span>
-                {settings.downloadDirectory && (
-                  <Button variant="ghost" size="sm" className="h-8" onClick={resetDownloadDirectory}>
-                    恢复默认
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" className="h-8" onClick={() => void changeDownloadDirectory()}>
-                  更改
-                </Button>
-              </div>
-            </div>
-
-            {appDataDir && (
-              <div className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
-                <div className="flex gap-4 items-center">
-                  <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0">
-                    <FolderOpen className="w-5 h-5 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground/90">应用数据目录</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">日志、缓存和本地状态优先保存在应用数据目录下</p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1.5 rounded-md border border-border max-w-80 truncate">
-                  {appDataDir}
-                </span>
-              </div>
-            )}
-
-            <div className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
-              <div className="flex gap-4 items-center">
-                <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                  <Server className="w-5 h-5 text-green-500" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground/90">API 服务源</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">当前桌面端使用的社区站点地址</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1.5 rounded-md border border-border">
-                  {settings.apiBaseUrl}
-                </span>
-                <Button variant="outline" size="sm" className="h-8" onClick={changeApiBaseUrl}>
-                  更改
-                </Button>
               </div>
             </div>
           </div>

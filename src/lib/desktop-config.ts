@@ -53,7 +53,7 @@ function readJson<T>(key: string, fallback: T): T {
 
 export function getDesktopSettings(): DesktopSettings {
   const settings = readJson(SETTINGS_KEY, DEFAULT_SETTINGS)
-  if (LEGACY_DEFAULT_DOWNLOAD_DIRECTORIES.has(settings.downloadDirectory)) {
+  if (settings.downloadDirectory || LEGACY_DEFAULT_DOWNLOAD_DIRECTORIES.has(settings.downloadDirectory)) {
     return { ...settings, downloadDirectory: "" }
   }
 

@@ -207,7 +207,6 @@ function getGameDirs(app, gameName, modsRootDir) {
     gameDir,
     systemDir,
     backupsDir: path.join(systemDir, 'backups'),
-    downloadsDir: path.join(systemDir, 'downloads'),
     tempDir: path.join(systemDir, 'temp'),
     statePath: path.join(systemDir, 'state.json'),
     stateBackupPath: path.join(systemDir, 'state.last-good.json'),
@@ -220,7 +219,6 @@ async function ensureGameDirs(dirs) {
     ensureDir(dirs.gameDir),
     ensureDir(dirs.systemDir),
     ensureDir(dirs.backupsDir),
-    ensureDir(dirs.downloadsDir),
     ensureDir(dirs.tempDir),
   ])
 }
@@ -798,21 +796,10 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
  }
 
  async function importDownloadedArchive(app, input, modsRootDir) {
-   const dirs = getGameDirs(app, input.gameName, modsRootDir)
-   await ensureGameDirs(dirs)
-   const archiveName = sanitizeSegment(input.fileName || path.basename(input.sourcePath) || `${input.modName || 'mod'}.zip`)
-   const ext = path.extname(archiveName) || path.extname(input.sourcePath) || '.zip'
-   const downloadId = input.downloadId || createId('download')
-   const stagedPath = path.join(dirs.downloadsDir, `${downloadId}${ext}`)
-
-   if (path.resolve(input.sourcePath) !== path.resolve(stagedPath)) {
-     await copyFileSafe(input.sourcePath, stagedPath)
-   }
-
    return importExternalMod(app, {
      gameId: input.gameId,
      gameName: input.gameName,
-     sourcePath: stagedPath,
+     sourcePath: input.sourcePath,
      sourceType: 'download',
      modName: input.modName,
      platformModId: input.platformModId,

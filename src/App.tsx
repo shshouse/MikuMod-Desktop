@@ -8,7 +8,7 @@ import { GamesPage } from "@/pages/games"
 import { DownloadsPage } from "@/pages/downloads"
 import { SettingsPage } from "@/pages/settings"
 import { GameModManagerPage } from "@/pages/game-mod-manager"
-import { fetchGames, getDownloadToken } from "@/lib/api"
+import { fetchGames } from "@/lib/api"
 import { getCustomGames, getLocalGamePaths, saveLocalGamePaths } from "@/lib/desktop-config"
 import type { CustomGameEntry } from "@/lib/desktop-config"
 import { AcceleratorPage } from "@/pages/accelerator"
@@ -16,7 +16,10 @@ import { ModDetailPage } from "@/pages/mod-detail"
 import { PostDetailPage } from "@/pages/post-detail"
 import { UserProfilePage } from "@/pages/user-profile"
 import { NotificationsPage } from "@/pages/notifications"
-import { useDownloadStore } from "@/store/download"
+import { showToast } from "@/lib/toast"
+import { ToastViewport } from "@/components/toast-viewport"
+
+const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
 
 interface PlatformGameEntry {
   id: string
@@ -87,35 +90,32 @@ function App() {
   useEffect(() => {
     let unmounted = false
 
-    const handler = async (url: string) => {
-      if (unmounted || !url.startsWith("mikumod://install")) return
+    const handler = (url: string) => {
+      if (unmounted || !url.startsWith("mikumod://")) return
 
       try {
         const parsed = new URL(url)
-        const modId = parsed.searchParams.get("mod_id")
-        const versionId = parsed.searchParams.get("version_id") || undefined
-        const modTitle = parsed.searchParams.get("mod_title") || "MikuMod 模组"
-        const gameId = parsed.searchParams.get("game_id") || undefined
-        const gameName = parsed.searchParams.get("game_name") || "未知游戏"
-        const apiBase = parsed.searchParams.get("api_base") || undefined
-        if (!modId) return
 
-        const tokenInfo = await getDownloadToken(modId, versionId, apiBase)
-        await useDownloadStore.getState().addDownload({
-          id: `dl-${Date.now()}`,
-          name: modTitle,
-          gameId,
-          game: gameName,
-          url: tokenInfo.url,
-          fileName: tokenInfo.fileName,
-          size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
-          platformModId: modId,
-          platformVersionId: versionId,
-          autoInstallGamePath: gameId ? localPaths[gameId] : undefined,
-        })
-        navigateTo("downloads")
-      } catch (error) {
-        alert(`一键安装失败: ${error instanceof Error ? error.message : "未知错误"}`)
+        if (parsed.hostname === "mod") {
+          const modNumber = parsed.pathname.replace(/^\/+/, "").split("/")[0]
+          if (!modNumber) return
+          const versionId = parsed.searchParams.get("version")
+          if (versionId) {
+            window.sessionStorage.setItem(`${MOD_PRESELECT_VERSION_KEY}:${modNumber}`, versionId)
+          }
+          navigateTo(`mod:${modNumber}`)
+          return
+        }
+
+        if (parsed.hostname === "install") {
+          showToast({
+            message: "Web 端已升级，请刷新网页后重试",
+            type: "info",
+            duration: 3500,
+          })
+        }
+      } catch {
+        showToast({ message: "无法识别的链接", type: "error" })
       }
     }
 
@@ -125,7 +125,7 @@ function App() {
       unmounted = true
       unsubscribe?.()
     }
-  }, [localPaths, navigateTo])
+  }, [navigateTo])
 
   const handleBack = useCallback(() => {
     if (!canGoBack) return
@@ -199,7 +199,7 @@ function App() {
       case "notifications":
         return <NotificationsPage onNavigate={navigateTo} />
       case "settings":
-        return <SettingsPage />
+        return <SettingsPage onNavigate={navigateTo} />
       default:
         return <ModsPage searchQuery={searchQuery} onNavigate={navigateTo} />
     }
@@ -224,6 +224,7 @@ function App() {
         </main>
       </div>
       <WindowControls />
+      <ToastViewport />
     </div>
   )
 }

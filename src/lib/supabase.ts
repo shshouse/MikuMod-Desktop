@@ -90,3 +90,14 @@ function getSupabaseClient() {
 }
 
 export const supabase = getSupabaseClient()
+
+export async function signOutDesktop() {
+  try {
+    await supabase.auth.signOut({ scope: "local" })
+  } finally {
+    clearStoredSupabaseSessions()
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("mikumod-auth-signed-out"))
+    }
+  }
+}

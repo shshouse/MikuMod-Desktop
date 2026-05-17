@@ -80,9 +80,10 @@
     },
     "publish": [
       {
-        "provider": "github",
-        "owner": "mikumod",
-        "repo": "MikuMod-Desktop"
+        "provider": "generic",
+        "url": "https://cdn.mikumod.com/desktop/${channel}",
+        "channel": "stable",
+        "useMultipleRangeRequest": false
       }
     ]
   }

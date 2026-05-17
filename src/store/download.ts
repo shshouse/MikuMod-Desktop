@@ -23,6 +23,7 @@ export interface DownloadTask {
   installedPath?: string
   platformModId?: string
   platformVersionId?: string
+  modStorageId?: string
   autoInstallGamePath?: string
   conflicts?: string[]
   installing?: boolean
@@ -31,6 +32,71 @@ export interface DownloadTask {
 }
 
 const TASKS_STORAGE_KEY = "mikumod_desktop_download_tasks"
+const MOD_STORAGE_ID_PATTERN = /^[A-Za-z0-9]{12}$/
+const ARCHIVE_EXTENSION_PATTERN = /\.(zip|rar|7z)$/i
+const STRICT_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/
+
+function sanitizeSegment(value: unknown, fallback = "Unknown") {
+  const normalized = String(value || "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "")
+    .slice(0, 80)
+
+  return normalized || fallback
+}
+
+function normalizeModStorageId(value: unknown) {
+  const raw = String(value || "").trim()
+  const stem = raw.replace(ARCHIVE_EXTENSION_PATTERN, "")
+  return MOD_STORAGE_ID_PATTERN.test(stem) ? stem : undefined
+}
+
+function extractModFolderFromPath(pathname: string) {
+  let normalizedPath = pathname
+  try {
+    normalizedPath = decodeURIComponent(pathname)
+  } catch {
+    normalizedPath = pathname
+  }
+
+  const segments = normalizedPath.replace(/^\/+/, "").split("/").filter(Boolean)
+  const modsIndex = segments.findIndex((segment) => segment === "mods")
+  if (modsIndex === -1) {
+    return undefined
+  }
+
+  const storageId = normalizeModStorageId(segments[modsIndex + 1])
+  if (!storageId) {
+    return undefined
+  }
+
+  const versionSegment = segments[modsIndex + 2]
+  if (versionSegment && STRICT_VERSION_PATTERN.test(versionSegment)) {
+    return `${storageId}\\${versionSegment}`
+  }
+
+  return storageId
+}
+
+function extractModFolderFromUrl(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return undefined
+  }
+
+  try {
+    return extractModFolderFromPath(new URL(value).pathname)
+  } catch {
+    return extractModFolderFromPath(value)
+  }
+}
+
+function resolveDownloadModFolder(task: Partial<DownloadTask> & { url: string }) {
+  return extractModFolderFromUrl(task.url)
+    || normalizeModStorageId(task.modStorageId)
+    || sanitizeSegment(task.name || task.platformModId)
+}
 
 function normalizeResumeData(value: unknown): DownloadResumeData | undefined {
   if (!value || typeof value !== "object") {
@@ -83,6 +149,7 @@ function normalizePersistedTask(task: Partial<DownloadTask>): DownloadTask {
     installedPath: task.installedPath,
     platformModId: task.platformModId,
     platformVersionId: task.platformVersionId,
+    modStorageId: task.modStorageId,
     autoInstallGamePath: task.autoInstallGamePath,
     conflicts: Array.isArray(task.conflicts) ? task.conflicts.filter((item): item is string => typeof item === "string") : undefined,
     installing: false,
@@ -223,6 +290,7 @@ class DownloadStore {
       progress: 0,
       platformModId: task.platformModId,
       platformVersionId: task.platformVersionId,
+      modStorageId: task.modStorageId,
       autoInstallGamePath: task.autoInstallGamePath,
       resumeData: task.resumeData,
       manuallyPaused: task.manuallyPaused,
@@ -230,19 +298,20 @@ class DownloadStore {
     this.emit()
 
     if (typeof window !== "undefined" && window.electronAPI) {
-      const gameName = (task.game || "Unknown").replace(/[\\/:*?"<>|]/g, "_")
+      const gameName = sanitizeSegment(task.game)
+      const modFolder = resolveDownloadModFolder(task)
       let saveDir: string
       const settings = getDesktopSettings()
       try {
         if (settings.downloadDirectory) {
           await window.electronAPI.authorizeDirectory(settings.downloadDirectory)
-          saveDir = `${settings.downloadDirectory}\\mods\\${gameName}`
+          saveDir = `${settings.downloadDirectory}\\mods\\${gameName}\\${modFolder}`
         } else {
           const modsDir = await window.electronAPI.getAppModsDir()
-          saveDir = `${modsDir}\\${gameName}\\_system\\downloads`
+          saveDir = `${modsDir}\\${gameName}\\${modFolder}`
         }
       } catch {
-        saveDir = `${settings.downloadDirectory || "downloads"}\\mods\\${gameName}`
+        saveDir = `${settings.downloadDirectory || "downloads"}\\mods\\${gameName}\\${modFolder}`
       }
       void window.electronAPI.startDownload(task.url, task.id, task.fileName, saveDir)
     }

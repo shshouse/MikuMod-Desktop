@@ -22,6 +22,8 @@ import { useDownloadStore } from "@/store/download"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
+const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
+
 interface ModDetailPageProps {
   modNumber: string
   onNavigate: (tab: string) => void
@@ -69,7 +71,11 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
         }
         setData(result)
         if (result.versions.length > 0) {
-          setSelectedVersionId(result.versions[0].id)
+          const preselectKey = `${MOD_PRESELECT_VERSION_KEY}:${modNumber}`
+          const preselect = window.sessionStorage.getItem(preselectKey)
+          window.sessionStorage.removeItem(preselectKey)
+          const matched = preselect && result.versions.find((v) => v.id === preselect)
+          setSelectedVersionId(matched ? matched.id : result.versions[0].id)
         }
       })
       .catch((fetchError) => {
