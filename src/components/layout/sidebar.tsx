@@ -4,7 +4,6 @@ import {
   Gamepad2,
   Download,
   MessageSquare,
-  Settings,
   Search,
   Zap,
 } from "lucide-react"
@@ -27,10 +26,6 @@ const topNavItems = [
   { id: "games", label: "游戏", icon: Gamepad2 },
   { id: "downloads", label: "下载", icon: Download },
   { id: "accelerator", label: "加速", icon: Zap },
-]
-
-const bottomNavItems = [
-  { id: "settings", label: "设置", icon: Settings },
 ]
 
 export function Sidebar({ activeTab, onTabChange, installedGames = [] }: SidebarProps) {
