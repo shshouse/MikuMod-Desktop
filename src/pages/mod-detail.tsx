@@ -98,9 +98,8 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
   const screenshots = useMemo(() => {
     if (!mod) return []
     return Array.from(new Set([
-      mod.thumbnail_url,
-      ...(mod.image_urls || []),
-      ...(mod.screenshot_urls || []),
+      mod.media?.thumbnail_url,
+      ...(mod.media?.image_urls || []),
     ].filter((url): url is string => !!url)))
   }, [mod])
 

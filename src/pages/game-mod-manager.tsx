@@ -25,7 +25,9 @@ interface PlatformLibraryMod {
   author?: {
     username?: string
   }
-  thumbnail_url?: string
+  media?: {
+    thumbnail_url?: string | null
+  } | null
   download_count?: number
   tags?: string[]
 }
@@ -445,8 +447,8 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
                 <div key={mod.id} className="group rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-200">
                   <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                     <div className="aspect-[16/9] bg-gradient-to-br from-muted to-muted/30 relative overflow-hidden">
-                      {mod.thumbnail_url ? (
-                        <img src={mod.thumbnail_url} alt={mod.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      {mod.media?.thumbnail_url ? (
+                        <img src={mod.media.thumbnail_url} alt={mod.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       ) : null}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                     </div>

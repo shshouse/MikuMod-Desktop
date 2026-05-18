@@ -140,9 +140,9 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
                   onClick={() => onNavigate(`mod:${mod.mod_number}`)}
                 >
                   <div className="aspect-[16/9] bg-gradient-to-br from-muted to-muted/30 overflow-hidden">
-                    {mod.thumbnail_url && (
+                    {mod.media?.thumbnail_url && (
                       <img
-                        src={mod.thumbnail_url}
+                        src={mod.media.thumbnail_url}
                         alt={mod.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />

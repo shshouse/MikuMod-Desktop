@@ -169,9 +169,9 @@ export function ModsPage({ searchQuery, onNavigate }: ModsPageProps) {
                   >
                     <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                       <div className="aspect-[16/9] bg-muted relative overflow-hidden">
-                        {mod.thumbnail_url ? (
+                        {mod.media?.thumbnail_url ? (
                           <img
-                            src={mod.thumbnail_url}
+                            src={mod.media.thumbnail_url}
                             alt={mod.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           />

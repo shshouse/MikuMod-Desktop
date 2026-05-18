@@ -38,6 +38,19 @@ export interface ModGameSummary {
   game_number?: string
 }
 
+export interface ModMediaSummary {
+  thumbnail_url?: string | null
+  image_urls?: string[] | null
+  video_url?: string | null
+}
+
+export interface ModSourceInfoSummary {
+  source_type?: string | null
+  is_open_source?: boolean | null
+  source_url?: string | null
+  git_repo_url?: string | null
+}
+
 export interface SearchModSummary {
   id: string
   title: string
@@ -45,7 +58,8 @@ export interface SearchModSummary {
   game?: ModGameSummary | null
   game_id?: string
   author?: ModAuthorSummary | null
-  thumbnail_url?: string | null
+  media?: ModMediaSummary | null
+  source_info?: ModSourceInfoSummary | null
   download_count?: number
   created_at?: string | null
   tags?: string[] | null
@@ -195,9 +209,8 @@ export interface ModDetailSummary {
   mod_number: string
   title: string
   description?: string | null
-  thumbnail_url?: string | null
-  image_urls?: string[] | null
-  screenshot_urls?: string[] | null
+  media?: ModMediaSummary | null
+  source_info?: ModSourceInfoSummary | null
   tags?: string[] | null
   created_at: string
   download_count?: number | null
@@ -389,7 +402,7 @@ export interface UserProfileModSummary {
   id: string
   mod_number: string
   title: string
-  thumbnail_url?: string | null
+  media?: ModMediaSummary | null
   created_at: string
   game?: {
     name?: string | null
