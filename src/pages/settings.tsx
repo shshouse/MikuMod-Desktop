@@ -1,7 +1,6 @@
-import { Download, FolderOpen, Loader2, LogOut, RefreshCcw, Settings2, Sparkles } from "lucide-react"
+import { Download, Loader2, LogOut, RefreshCcw, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { getDesktopSettings } from "@/lib/desktop-config"
 import type { ElectronAPI } from "@/types/electron"
 import { signOutDesktop } from "@/lib/supabase"
 import { showToast } from "@/lib/toast"
@@ -12,9 +11,7 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ onNavigate }: SettingsPageProps) {
-  const [settings] = useState(() => getDesktopSettings())
   const [savedMessage, setSavedMessage] = useState("")
-  const [defaultDownloadRoot, setDefaultDownloadRoot] = useState("")
 
   // Auto-update state
   const [appVersion, setAppVersion] = useState("")
@@ -22,13 +19,10 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [updateInfo, setUpdateInfo] = useState<Awaited<ReturnType<ElectronAPI["updaterCheck"]>>["info"] | null>(null)
   const [updateProgress, setUpdateProgress] = useState(0)
   const [updateError, setUpdateError] = useState("")
-  const [updateChannel, setUpdateChannel] = useState<'stable' | 'beta' | 'alpha'>('stable')
 
   useEffect(() => {
     // Get app version
     window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
-    window.electronAPI?.getAppModsDir?.().then((dir) => setDefaultDownloadRoot(dir)).catch(() => setDefaultDownloadRoot(""))
-    window.electronAPI?.updaterGetChannel?.().then((c) => setUpdateChannel(c || 'stable')).catch(() => {})
 
     // Listen for updater events
     window.electronAPI?.onUpdaterEvent?.((data) => {
@@ -78,32 +72,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold tracking-tight">偏好设置</h2>
           {savedMessage && <span className="text-xs text-green-400">{savedMessage}</span>}
-        </div>
-
-        {/* General config card */}
-        <div className="rounded-2xl bg-card overflow-hidden">
-          <div className="px-4 py-3 flex items-center gap-2 border-b border-border/50">
-            <Settings2 className="w-4 h-4 text-blue-400" />
-            <h3 className="text-sm font-medium">通用配置</h3>
-          </div>
-          <div className="divide-y divide-border/50">
-            <div className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
-              <div className="flex gap-4 items-center">
-                <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <FolderOpen className="w-5 h-5 text-blue-500" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground/90">默认下载目录</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">留空时保存到右侧显示的默认 mods 目录</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1.5 rounded-md border border-border max-w-80 truncate">
-                  {settings.downloadDirectory || defaultDownloadRoot || "默认 mods 目录"}
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Auto-update card */}
@@ -192,27 +160,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                   </Button>
                 </div>
               )}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-border/50 pt-4">
-              <div>
-                <p className="text-sm font-medium text-foreground/90">更新通道</p>
-                <p className="text-xs text-muted-foreground mt-0.5">stable 为正式版，beta 为测试版，alpha 为开发预览</p>
-              </div>
-              <select
-                value={updateChannel}
-                onChange={async (e) => {
-                  const next = e.target.value as 'stable' | 'beta' | 'alpha'
-                  setUpdateChannel(next)
-                  await window.electronAPI?.updaterSetChannel?.(next)
-                  showToast({ message: `已切换到 ${next} 通道`, type: 'success' })
-                }}
-                className="h-8 text-sm bg-background border border-border rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="stable">stable（正式）</option>
-                <option value="beta">beta（测试）</option>
-                <option value="alpha">alpha（开发）</option>
-              </select>
             </div>
           </div>
         </div>

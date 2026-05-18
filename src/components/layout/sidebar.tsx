@@ -102,31 +102,6 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
           </>
         )}
       </nav>
-
-      {/* Navigation - bottom */}
-      <div className="flex flex-col px-3 pb-3 gap-1">
-        {bottomNavItems.map((item) => {
-          const Icon = item.icon
-          const isActive = resolvedActive === item.id
-          return (
-            <button
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={cn(
-                "w-full h-9 flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 text-left",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              )}
-            >
-              <Icon className={cn("w-4 h-4 shrink-0", isActive && "text-blue-400")} />
-              <span className={cn("text-sm", isActive ? "font-medium" : "font-normal")}>
-                {item.label}
-              </span>
-            </button>
-          )
-        })}
-      </div>
     </aside>
   )
 }
