@@ -6,6 +6,8 @@ import {
   Loader2,
   Package,
   MessageSquare,
+  RefreshCw,
+  Shield,
   Star,
 } from "lucide-react"
 import { useEffect, useState } from "react"
@@ -24,6 +26,12 @@ interface NotificationsPageProps {
 const typeIcons: Record<string, LucideIcon> = {
   mod_approved: Package,
   mod_rejected: Package,
+  mod_update: RefreshCw,
+  review: MessageSquare,
+  reply: MessageSquare,
+  review_reply: MessageSquare,
+  modder_approved: Shield,
+  modder_rejected: Shield,
   new_review: Star,
   new_reply: MessageSquare,
   new_follower: Bell,
@@ -33,6 +41,12 @@ const typeIcons: Record<string, LucideIcon> = {
 const typeLabels: Record<string, string> = {
   mod_approved: "模组已通过",
   mod_rejected: "模组被拒绝",
+  mod_update: "模组更新",
+  review: "新评测",
+  reply: "新回复",
+  review_reply: "评测回复",
+  modder_approved: "创作者申请通过",
+  modder_rejected: "创作者申请被拒",
   new_review: "新评测",
   new_reply: "新回复",
   new_follower: "新关注者",

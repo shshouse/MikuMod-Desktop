@@ -210,11 +210,6 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
                   onClick={() => review.mod?.mod_number && onNavigate(`mod:${review.mod.mod_number}`)}
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    {review.is_positive ? (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">推荐</span>
-                    ) : (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">不推荐</span>
-                    )}
                     <span className="text-xs text-muted-foreground">{review.mod?.title}</span>
                   </div>
                   <p className="text-sm text-foreground/80 line-clamp-2">{review.content}</p>

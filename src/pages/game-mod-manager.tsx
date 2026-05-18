@@ -31,6 +31,8 @@ interface PlatformLibraryMod {
 }
 
 type NoticeTone = "default" | "success" | "error"
+const PLATFORM_MOD_PAGE_SIZE = 48
+const PLATFORM_MOD_MAX_PAGES = 5
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
@@ -72,18 +74,41 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
   }, [gameId, gameName])
 
   useEffect(() => {
+    let isActive = true
+
     setIsLoading(true)
-    fetchMods({ limit: 48 })
-      .then((data) => {
+    async function loadPlatformMods() {
+      const matched: PlatformLibraryMod[] = []
+
+      for (let page = 0; page < PLATFORM_MOD_MAX_PAGES; page += 1) {
+        const data = await fetchMods({ page, limit: PLATFORM_MOD_PAGE_SIZE })
         const all = ((data as { mods?: PlatformLibraryMod[] }).mods || [])
-        const filtered = all.filter((mod) => mod.game?.id === gameId || mod.game_id === gameId)
+        matched.push(...all.filter((mod) => mod.game?.id === gameId || mod.game_id === gameId))
+        if (all.length < PLATFORM_MOD_PAGE_SIZE || data.total <= (page + 1) * PLATFORM_MOD_PAGE_SIZE) {
+          break
+        }
+      }
+
+      return matched
+    }
+
+    loadPlatformMods()
+      .then((filtered) => {
+        if (!isActive) return
         setMods(filtered)
       })
       .catch((error) => {
+        if (!isActive) return
         console.error("Failed to fetch mods:", error)
         setMods([])
       })
-      .finally(() => setIsLoading(false))
+      .finally(() => {
+        if (isActive) setIsLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
   }, [gameId])
 
   useEffect(() => {
@@ -394,7 +419,7 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
               <h3 className="text-base font-semibold tracking-tight">MikuMod 模组库</h3>
               <p className="text-xs text-muted-foreground mt-1">支持仅下载入库，也支持下载完成后自动安装到当前游戏目录</p>
             </div>
-            <div className="text-xs text-muted-foreground">共 {mods.length} 个模组</div>
+            <div className="text-xs text-muted-foreground">已匹配 {mods.length} 个模组</div>
           </div>
 
           {isLoading ? (

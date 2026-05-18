@@ -7,7 +7,6 @@ import {
   Loader2,
   MessageSquare,
   Package,
-  ThumbsDown,
   ThumbsUp,
   TrendingUp,
   User,
@@ -49,7 +48,6 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
 
   // Review state
   const [reviewContent, setReviewContent] = useState("")
-  const [reviewPositive, setReviewPositive] = useState(true)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
 
@@ -106,9 +104,6 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
     ].filter((url): url is string => !!url)))
   }, [mod])
 
-  const positiveCount = reviews.filter((review) => review.is_positive).length
-  const negativeCount = reviews.filter((review) => !review.is_positive).length
-
   const startDownload = async () => {
     if (!mod) return
     setDownloading(true)
@@ -136,7 +131,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
     if (!reviewContent.trim() || !mod || reviewSubmitting) return
     setReviewSubmitting(true)
     try {
-      await submitModReview(mod.mod_number, reviewContent, reviewPositive)
+      await submitModReview(mod.id, reviewContent)
       // Refresh reviews
       const refreshed = await fetchModDetail(modNumber)
       if (refreshed) setData(refreshed)
@@ -258,11 +253,7 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
             </span>
             <span className="flex items-center gap-1.5">
               <ThumbsUp className="w-4 h-4" />
-              {positiveCount} 好评
-            </span>
-            <span className="flex items-center gap-1.5">
-              <ThumbsDown className="w-4 h-4" />
-              {negativeCount} 差评
+              {(mod.like_count || 0).toLocaleString()} 点赞
             </span>
           </div>
 
@@ -346,26 +337,6 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
               {/* Submit review */}
               {currentUser && (
                 <div className="p-4 rounded-xl border border-border bg-card space-y-3">
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant={reviewPositive ? "default" : "outline"}
-                      onClick={() => setReviewPositive(true)}
-                      className="gap-1"
-                    >
-                      <ThumbsUp className="w-3.5 h-3.5" />
-                      推荐
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={!reviewPositive ? "destructive" : "outline"}
-                      onClick={() => setReviewPositive(false)}
-                      className="gap-1"
-                    >
-                      <ThumbsDown className="w-3.5 h-3.5" />
-                      不推荐
-                    </Button>
-                  </div>
                   <textarea
                     value={reviewContent}
                     onChange={(e) => setReviewContent(e.target.value)}
@@ -394,16 +365,9 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
                       </div>
                       <span className="text-sm font-medium">{review.user?.username || "用户"}</span>
                     </button>
-                    <div className="flex items-center gap-2">
-                      {review.is_positive ? (
-                        <ThumbsUp className="w-4 h-4 text-green-400" />
-                      ) : (
-                        <ThumbsDown className="w-4 h-4 text-red-400" />
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(review.created_at), { locale: zhCN, addSuffix: true })}
-                      </span>
-                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(review.created_at), { locale: zhCN, addSuffix: true })}
+                    </span>
                   </div>
                   <p className="text-sm text-foreground/80 mt-2 whitespace-pre-wrap">{review.content}</p>
                 </div>

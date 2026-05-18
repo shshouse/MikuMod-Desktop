@@ -64,10 +64,11 @@ export interface NotificationSummary {
   id: string
   type: string
   title?: string | null
+  content?: string | null
   message?: string | null
   is_read: boolean
   created_at: string
-  related_post_id?: string | null
+  related_post_id?: string | number | null
   related_mod?: NotificationModSummary | null
 }
 
@@ -201,6 +202,7 @@ export interface ModDetailSummary {
   created_at: string
   download_count?: number | null
   view_count?: number | null
+  like_count?: number | null
   latest_version?: string | null
   game_id?: string
   game?: ModDetailGameSummary | null
@@ -218,7 +220,6 @@ export interface ModVersionSummary {
 export interface ModReviewSummary {
   id: string
   content: string
-  is_positive: boolean
   created_at: string
   user?: ModDetailAuthorSummary | null
 }
@@ -265,6 +266,11 @@ export interface PostReplySummary {
 export interface PostLikeStatus {
   count: number
   liked: boolean
+}
+
+export interface SubmitPostReplyResponse extends Partial<PostReplySummary> {
+  _needsReview?: boolean
+  _reviewReason?: string
 }
 
 // === Mod Detail ===
@@ -320,12 +326,12 @@ export async function togglePostLike(postId: string): Promise<PostLikeStatus> {
   return data // { liked, count }
 }
 
-export async function submitPostReply(postId: string, content: string, parentReplyId?: string | number) {
+export async function submitPostReply(postId: string, content: string, parentReplyId?: string | number): Promise<SubmitPostReplyResponse> {
   const body: Record<string, unknown> = { content }
   // 主站 /community/posts/[id]/replies POST 接收字段名为 reply_to_id
   if (parentReplyId) body.reply_to_id = parentReplyId
 
-  const data = await authenticatedFetch(`${getApiBase()}/community/posts/${postId}/replies`, {
+  const data = await authenticatedFetch<SubmitPostReplyResponse>(`${getApiBase()}/community/posts/${postId}/replies`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -399,7 +405,6 @@ export interface UserProfilePostSummary {
 
 export interface UserProfileReviewSummary {
   id: string
-  is_positive: boolean
   content: string
   created_at: string
   mod?: {
@@ -427,11 +432,11 @@ export async function fetchUserProfile(userNumber: string): Promise<UserProfileR
 
 // === Mod Reviews ===
 
-export async function submitModReview(modId: string, content: string, isPositive: boolean) {
+export async function submitModReview(modId: string, content: string) {
   const data = await authenticatedFetch(`${getApiBase()}/mods/${modId}/reviews`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, is_positive: isPositive }),
+    body: JSON.stringify({ content }),
   })
   return data
 }

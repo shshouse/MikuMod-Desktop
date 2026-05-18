@@ -59,6 +59,7 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
   const [replyContent, setReplyContent] = useState("")
   const [replyTo, setReplyTo] = useState<{ id: string | number; username: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [replyNotice, setReplyNotice] = useState("")
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
 
   useEffect(() => {
@@ -113,9 +114,14 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
     if (!replyContent.trim() || submitting) return
     setSubmitting(true)
     try {
-      await submitPostReply(postId, replyContent, replyTo?.id)
+      const result = await submitPostReply(postId, replyContent, replyTo?.id)
       setReplyContent("")
       setReplyTo(null)
+      if (result._needsReview) {
+        setReplyNotice(result._reviewReason ? `回复已提交审核：${result._reviewReason}` : "回复已提交审核，通过后会展示")
+        return
+      }
+      setReplyNotice("")
       // Refresh replies
       const refreshed = await fetchPostReplies(postId).catch(() => [])
       setReplies(refreshed)
@@ -237,6 +243,11 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
         {/* Reply form */}
         {currentUser && (
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            {replyNotice && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                {replyNotice}
+              </div>
+            )}
             {replyTo && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>回复 @{replyTo.username}</span>
