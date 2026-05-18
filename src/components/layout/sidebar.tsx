@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { useDownloadStore } from "@/store/download"
 import {
   Gamepad2,
   Download,
@@ -34,6 +35,7 @@ const bottomNavItems = [
 
 export function Sidebar({ activeTab, onTabChange, installedGames = [] }: SidebarProps) {
   const resolvedActive = activeTab.startsWith("game:") ? "games" : activeTab
+  const downloadTaskCount = useDownloadStore.useStore().length
 
   return (
     <aside className="w-48 shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
@@ -62,6 +64,11 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
               <span className={cn("text-sm", isActive ? "font-medium" : "font-normal")}>
                 {item.label}
               </span>
+              {item.id === "downloads" && downloadTaskCount > 0 ? (
+                <span className="ml-auto min-w-5 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-center text-[10px] font-semibold text-blue-400">
+                  {downloadTaskCount}
+                </span>
+              ) : null}
             </button>
           )
         })}
