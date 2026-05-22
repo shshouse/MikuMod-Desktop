@@ -16,6 +16,7 @@ export interface ManagedModSummary {
   folderName: string
   platformModId?: string | null
   platformVersionId?: string | null
+  modNumber?: string | null
 }
 
 export interface ImportExternalModInput {
@@ -26,6 +27,7 @@ export interface ImportExternalModInput {
   modName?: string
   platformModId?: string
   platformVersionId?: string
+  modNumber?: string
 }
 
 export interface ImportDownloadedModInput {
@@ -36,8 +38,10 @@ export interface ImportDownloadedModInput {
   modName?: string
   platformModId?: string
   platformVersionId?: string
+  modNumber?: string
   downloadId?: string
   fileName?: string
+  archiveFileName?: string
 }
 
 export interface InstallManagedModInput {

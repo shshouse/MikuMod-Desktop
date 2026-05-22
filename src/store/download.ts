@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react"
 import type { DownloadResumeData } from "@/types/electron"
-import { getDesktopSettings } from "@/lib/desktop-config"
-import { importDownloadedMod, installManagedMod } from "@/lib/mod-manager"
+import { getDesktopSettings, persistKey } from "@/lib/desktop-config"
+import { importDownloadedMod, installManagedMod, listManagedMods, uninstallManagedMod } from "@/lib/mod-manager"
 import { logger } from "@/lib/logger"
 
 export interface DownloadTask {
@@ -11,6 +11,7 @@ export interface DownloadTask {
   game: string
   url: string
   fileName?: string
+  archiveFileName?: string
   size: string
   status: "downloading" | "paused" | "done" | "error"
   progress: number
@@ -23,8 +24,10 @@ export interface DownloadTask {
   installedPath?: string
   platformModId?: string
   platformVersionId?: string
+  modNumber?: string
   modStorageId?: string
   autoInstallGamePath?: string
+  autoInstallAfterTaskIds?: string[]
   conflicts?: string[]
   installing?: boolean
   resumeData?: DownloadResumeData
@@ -34,7 +37,6 @@ export interface DownloadTask {
 const TASKS_STORAGE_KEY = "mikumod_desktop_download_tasks"
 const MOD_STORAGE_ID_PATTERN = /^[A-Za-z0-9]{12}$/
 const ARCHIVE_EXTENSION_PATTERN = /\.(zip|rar|7z)$/i
-const STRICT_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/
 
 function sanitizeSegment(value: unknown, fallback = "Unknown") {
   const normalized = String(value || "")
@@ -63,36 +65,17 @@ function extractModFolderFromPath(pathname: string) {
 
   const segments = normalizedPath.replace(/^\/+/, "").split("/").filter(Boolean)
   const modsIndex = segments.findIndex((segment) => segment === "mods")
-  if (modsIndex === -1) {
-    return undefined
-  }
-
-  const storageId = normalizeModStorageId(segments[modsIndex + 1])
-  if (!storageId) {
-    return undefined
-  }
-
-  const versionSegment = segments[modsIndex + 2]
-  if (versionSegment && STRICT_VERSION_PATTERN.test(versionSegment)) {
-    return `${storageId}\\${versionSegment}`
-  }
-
-  return storageId
+  if (modsIndex === -1) return undefined
+  return normalizeModStorageId(segments[modsIndex + 1])
 }
 
 function extractModFolderFromUrl(value: unknown) {
-  if (typeof value !== "string" || !value) {
-    return undefined
-  }
-
-  try {
-    return extractModFolderFromPath(new URL(value).pathname)
-  } catch {
-    return extractModFolderFromPath(value)
-  }
+  if (typeof value !== "string" || !value) return undefined
+  try { return extractModFolderFromPath(new URL(value).pathname) } catch { return extractModFolderFromPath(value) }
 }
 
 function resolveDownloadModFolder(task: Partial<DownloadTask> & { url: string }) {
+  if (task.modNumber) return sanitizeSegment(task.modNumber)
   return extractModFolderFromUrl(task.url)
     || normalizeModStorageId(task.modStorageId)
     || sanitizeSegment(task.name || task.platformModId)
@@ -137,6 +120,7 @@ function normalizePersistedTask(task: Partial<DownloadTask>): DownloadTask {
     game: task.game || "Unknown",
     url: task.url || "",
     fileName: task.fileName,
+    archiveFileName: task.archiveFileName,
     size: task.size || "Unknown",
     status: recoverable ? "paused" : (interrupted ? "error" : (task.status === "done" || task.status === "error" ? task.status : "error")),
     progress: typeof task.progress === "number" ? task.progress : 0,
@@ -149,8 +133,10 @@ function normalizePersistedTask(task: Partial<DownloadTask>): DownloadTask {
     installedPath: task.installedPath,
     platformModId: task.platformModId,
     platformVersionId: task.platformVersionId,
+    modNumber: task.modNumber,
     modStorageId: task.modStorageId,
     autoInstallGamePath: task.autoInstallGamePath,
+    autoInstallAfterTaskIds: Array.isArray(task.autoInstallAfterTaskIds) ? task.autoInstallAfterTaskIds.filter((v): v is string => typeof v === "string" && v.length > 0) : undefined,
     conflicts: Array.isArray(task.conflicts) ? task.conflicts.filter((item): item is string => typeof item === "string") : undefined,
     installing: false,
     resumeData,
@@ -165,10 +151,13 @@ function persistTasks(tasks: DownloadTask[]) {
 
   if (tasks.length === 0) {
     window.localStorage.removeItem(TASKS_STORAGE_KEY)
+    persistKey(TASKS_STORAGE_KEY, "[]")
     return
   }
 
-  window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
+  const json = JSON.stringify(tasks)
+  window.localStorage.setItem(TASKS_STORAGE_KEY, json)
+  persistKey(TASKS_STORAGE_KEY, json)
 }
 
 function recoverTasks(): DownloadTask[] {
@@ -195,6 +184,7 @@ class DownloadStore {
   private tasks: DownloadTask[] = recoverTasks()
   private listeners = new Set<() => void>()
   private lastProgressMap = new Map<string, { bytes: number; time: number }>()
+  private autoInstallQueueRunning = false
 
   private autoResumeRecoverableTasks() {
     if (typeof window === "undefined" || !window.electronAPI) {
@@ -228,8 +218,8 @@ class DownloadStore {
             : undefined,
         })
 
-        if (data.status === "done" && previous?.autoInstallGamePath && !previous.installed && !previous.installing) {
-          void this.installToGame(data.id, previous.autoInstallGamePath)
+        if (data.status === "done") {
+          this.runAutoInstallQueue()
         }
       })
 
@@ -273,12 +263,56 @@ class DownloadStore {
     return speedKb >= 1024 ? `${(speedKb / 1024).toFixed(2)} MB/s` : `${speedKb.toFixed(0)} KB/s`
   }
 
+  private isAutoInstallReady(task: DownloadTask) {
+    if (!task.autoInstallGamePath || task.status !== "done" || task.installed || task.installing) return false
+    return (task.autoInstallAfterTaskIds || []).every((id) => this.tasks.find((t) => t.id === id)?.installed === true)
+  }
+
+  private runAutoInstallQueue() {
+    if (this.autoInstallQueueRunning) return
+    this.autoInstallQueueRunning = true
+    void (async () => {
+      try {
+        let progressed = false
+        do {
+          progressed = false
+          for (const task of [...this.tasks]) {
+            if (!this.isAutoInstallReady(task)) continue
+            const ok = await this.installToGame(task.id, task.autoInstallGamePath!)
+            if (!ok) this.updateTask(task.id, { autoInstallGamePath: undefined })
+            progressed = ok || progressed
+          }
+        } while (progressed)
+      } finally {
+        this.autoInstallQueueRunning = false
+        if (this.tasks.some((t) => this.isAutoInstallReady(t))) this.runAutoInstallQueue()
+      }
+    })()
+  }
+
+  private isSameModTask(a: DownloadTask, b: Partial<DownloadTask>) {
+    if (!a.platformModId || !b.platformModId || a.platformModId !== b.platformModId) return false
+    return !b.platformVersionId || a.platformVersionId === b.platformVersionId
+  }
+
   async addDownload(task: Partial<DownloadTask> & { id: string; url: string }) {
-    if (this.tasks.some((item) => item.url === task.url && item.status !== "error")) {
-      return
+    const existing = this.tasks.find((t) => t.status !== "error" && (t.url === task.url || this.isSameModTask(t, task)))
+    if (existing) {
+      const merged = {
+        autoInstallGamePath: task.autoInstallGamePath || existing.autoInstallGamePath,
+        autoInstallAfterTaskIds: [...new Set([...(existing.autoInstallAfterTaskIds || []), ...(task.autoInstallAfterTaskIds || [])])].filter(Boolean) as string[] | undefined,
+        platformModId: task.platformModId || existing.platformModId,
+        platformVersionId: task.platformVersionId || existing.platformVersionId,
+        modNumber: task.modNumber || existing.modNumber,
+        archiveFileName: task.archiveFileName || existing.archiveFileName,
+      }
+      if (merged.autoInstallAfterTaskIds && merged.autoInstallAfterTaskIds.length === 0) merged.autoInstallAfterTaskIds = undefined
+      this.updateTask(existing.id, merged)
+      this.runAutoInstallQueue()
+      return { added: false as const, taskId: existing.id }
     }
 
-    this.tasks.push({
+    const newTask: DownloadTask = {
       id: task.id,
       name: task.name || "Unknown",
       gameId: task.gameId,
@@ -290,11 +324,15 @@ class DownloadStore {
       progress: 0,
       platformModId: task.platformModId,
       platformVersionId: task.platformVersionId,
+      modNumber: task.modNumber,
+      archiveFileName: task.archiveFileName,
       modStorageId: task.modStorageId,
       autoInstallGamePath: task.autoInstallGamePath,
+      autoInstallAfterTaskIds: task.autoInstallAfterTaskIds,
       resumeData: task.resumeData,
       manuallyPaused: task.manuallyPaused,
-    })
+    }
+    this.tasks.push(newTask)
     this.emit()
 
     if (typeof window !== "undefined" && window.electronAPI) {
@@ -315,6 +353,7 @@ class DownloadStore {
       }
       void window.electronAPI.startDownload(task.url, task.id, task.fileName, saveDir)
     }
+    return { added: true as const, taskId: task.id }
   }
 
   updateTask(id: string, updates: Partial<DownloadTask>) {
@@ -392,6 +431,23 @@ class DownloadStore {
       const gameId = task.gameId || `custom:${task.game}`
       this.updateTask(id, { installing: true, error: undefined })
 
+      let shouldInstall = true
+      if (!task.managedModId && task.platformModId) {
+        const managed = await listManagedMods(gameId, task.game)
+        const prior = managed.find((m) => m.platformModId === task.platformModId)
+        if (prior) {
+          if (prior.platformVersionId === task.platformVersionId) {
+            shouldInstall = !prior.installed
+          } else if (prior.installed) {
+            const uninstallResult = await uninstallManagedMod({ gameId, gameName: task.game, modId: prior.id, gamePath })
+            if (!uninstallResult.ok) {
+              this.updateTask(id, { installing: false, error: uninstallResult.error || "旧版本卸载失败" })
+              return false
+            }
+          }
+        }
+      }
+
       const imported = task.managedModId
         ? { id: task.managedModId }
         : await importDownloadedMod({
@@ -402,9 +458,17 @@ class DownloadStore {
             modName: task.name,
             platformModId: task.platformModId,
             platformVersionId: task.platformVersionId,
+            modNumber: task.modNumber,
             downloadId: task.id,
             fileName: task.fileName,
+            archiveFileName: task.archiveFileName,
           })
+
+      if (!shouldInstall) {
+        this.updateTask(id, { installing: false, imported: true, managedModId: imported.id, installed: true, installedPath: gamePath, error: undefined })
+        this.emit()
+        return true
+      }
 
       const result = await installManagedMod({
         gameId,

@@ -1,16 +1,17 @@
 import { AlertTriangle, Archive, CheckCircle2, ExternalLink, FolderDown, FolderOpen, Loader2, Package, Plus, RefreshCw, Trash2, TrendingUp } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { fetchMods, getDownloadToken } from "@/lib/api"
+import { fetchMods } from "@/lib/api"
 import { importExternalMod, installManagedMod, listManagedMods, uninstallManagedMod } from "@/lib/mod-manager"
 import type { ManagedModSummary } from "@/lib/mod-manager"
+import { queueOneClickInstallByModNumber, showOneClickInstallError } from "@/lib/mod-install"
 import { useDownloadStore } from "@/store/download"
 
 interface GameModManagerPageProps {
   gameId: string
   gameName: string
   localPath: string | undefined
-  onSetPath: (gameId: string) => Promise<void> | void
+  onSetPath: (gameId: string) => Promise<string | null | undefined>
   onNavigate: (tab: string) => void
 }
 
@@ -60,6 +61,7 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
   const [isManagedLoading, setIsManagedLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: NoticeTone; text: string } | null>(null)
+  const downloadTasks = useDownloadStore.useStore()
 
   const loadManagedMods = useCallback(async () => {
     setIsManagedLoading(true)
@@ -119,6 +121,21 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
 
   const installedManagedMods = useMemo(() => managedMods.filter((item) => item.installed), [managedMods])
   const availableManagedMods = useMemo(() => managedMods.filter((item) => !item.installed), [managedMods])
+  const managedByPlatformId = useMemo(() => new Map(managedMods.filter((item) => item.platformModId).map((item) => [item.platformModId!, item])), [managedMods])
+  const managedByModNumber = useMemo(() => new Map(managedMods.filter((item) => item.modNumber).map((item) => [String(item.modNumber), item])), [managedMods])
+  const installedTaskSignature = useMemo(() => downloadTasks
+    .filter((task) => task.installed && ((task.gameId && task.gameId === gameId) || task.game === gameName))
+    .map((task) => `${task.id}:${task.managedModId || ""}:${task.platformModId || ""}:${task.platformVersionId || ""}`)
+    .join("|"), [downloadTasks, gameId, gameName])
+
+  useEffect(() => {
+    if (!installedTaskSignature) return
+    void loadManagedMods()
+  }, [installedTaskSignature, loadManagedMods])
+
+  const getLocalPlatformMod = (mod: PlatformLibraryMod) => {
+    return managedByPlatformId.get(mod.id) || (mod.mod_number ? managedByModNumber.get(String(mod.mod_number)) : undefined)
+  }
 
   const openModDetail = (modNumber: string) => {
     onNavigate(`mod:${modNumber}`)
@@ -133,25 +150,19 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
     await onSetPath(gameId)
   }
 
-  const queueDownload = async (mod: PlatformLibraryMod, autoInstall: boolean) => {
+  const queueInstall = async (mod: PlatformLibraryMod) => {
+    if (!mod.mod_number) { openModDetail(mod.mod_number || mod.id); return }
     try {
-      const tokenInfo = await getDownloadToken(mod.id)
-      await useDownloadStore.getState().addDownload({
-        id: `dl-${Date.now()}`,
-        name: mod.title,
-        gameId,
-        game: gameName,
-        url: tokenInfo.url,
-        fileName: tokenInfo.fileName,
-        size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
-        platformModId: mod.id,
-        autoInstallGamePath: autoInstall ? localPath : undefined,
+      await queueOneClickInstallByModNumber({
+        modNumber: mod.mod_number,
+        resolveGamePath: async (gid) => localPaths[gid] || localPath || await onSetPath(gid),
       })
-      setNotice({ tone: "success", text: autoInstall ? "已加入下载队列，下载完成后会自动安装" : "已加入下载队列" })
     } catch (error) {
-      setNotice({ tone: "error", text: `下载请求失败: ${getErrorMessage(error, "未知错误")}` })
+      showOneClickInstallError(error)
     }
   }
+
+  const localPaths: Record<string, string> = localPath ? { [gameId]: localPath } : {}
 
   const handleImportArchive = async () => {
     const sourcePath = await window.electronAPI?.selectModFile()
@@ -419,7 +430,7 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-semibold tracking-tight">MikuMod 模组库</h3>
-              <p className="text-xs text-muted-foreground mt-1">支持仅下载入库，也支持下载完成后自动安装到当前游戏目录</p>
+              <p className="text-xs text-muted-foreground mt-1">一键安装模组到当前游戏目录，自动处理前置依赖</p>
             </div>
             <div className="text-xs text-muted-foreground">已匹配 {mods.length} 个模组</div>
           </div>
@@ -443,7 +454,10 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {mods.map((mod) => (
+              {mods.map((mod) => {
+                const localMod = getLocalPlatformMod(mod)
+
+                return (
                 <div key={mod.id} className="group rounded-xl border border-border bg-card overflow-hidden hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-200">
                   <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                     <div className="aspect-[16/9] bg-gradient-to-br from-muted to-muted/30 relative overflow-hidden">
@@ -475,18 +489,15 @@ export function GameModManagerPage({ gameId, gameName, localPath, onSetPath, onN
                         <ExternalLink className="w-4 h-4" />
                         详情
                       </Button>
-                      <Button size="sm" variant="outline" className="h-8" onClick={() => void queueDownload(mod, false)}>
-                        <Package className="w-4 h-4" />
-                        仅下载
-                      </Button>
-                      <Button size="sm" className="col-span-2 h-8" onClick={() => void queueDownload(mod, true)} disabled={!localPath}>
+                      <Button size="sm" className="h-8" onClick={() => localMod && !localMod.installed ? void handleInstallManaged(localMod.id) : void queueInstall(mod)} disabled={localMod?.installed}>
                         <CheckCircle2 className="w-4 h-4" />
-                        一键安装
+                        {localMod?.installed ? "已安装" : localMod ? "安装" : "一键安装"}
                       </Button>
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>

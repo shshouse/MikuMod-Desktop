@@ -9,7 +9,7 @@ import { DownloadsPage } from "@/pages/downloads"
 import { SettingsPage } from "@/pages/settings"
 import { GameModManagerPage } from "@/pages/game-mod-manager"
 import { fetchGames } from "@/lib/api"
-import { getCustomGames, getLocalGamePaths, saveLocalGamePaths } from "@/lib/desktop-config"
+import { getCustomGames, getLocalGamePaths, initDesktopConfig, saveLocalGamePaths } from "@/lib/desktop-config"
 import type { CustomGameEntry } from "@/lib/desktop-config"
 import { AcceleratorPage } from "@/pages/accelerator"
 import { ModDetailPage } from "@/pages/mod-detail"
@@ -18,6 +18,7 @@ import { UserProfilePage } from "@/pages/user-profile"
 import { NotificationsPage } from "@/pages/notifications"
 import { showToast } from "@/lib/toast"
 import { ToastViewport } from "@/components/toast-viewport"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ForceUpdateGate } from "@/components/force-update-gate"
 
 const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
@@ -39,6 +40,10 @@ function App() {
   const [customGames, setCustomGames] = useState<CustomGameEntry[]>(getCustomGames())
 
   useEffect(() => {
+    initDesktopConfig().then(() => {
+      setLocalPaths(getLocalGamePaths())
+      setCustomGames(getCustomGames())
+    })
     fetchGames()
       .then((data) => setPlatformGames((data as PlatformGameEntry[]) || []))
       .catch(() => setPlatformGames([]))
@@ -59,8 +64,9 @@ function App() {
 
   const handleSetPath = useCallback(async (gameId: string) => {
     const selectedPath = await window.electronAPI?.selectDirectory()
-    if (!selectedPath) return
+    if (!selectedPath) return null
     persistPaths({ ...localPaths, [gameId]: selectedPath })
+    return selectedPath
   }, [localPaths, persistPaths])
 
   // 已设置路径的游戏列表（用于侧边栏）
@@ -146,7 +152,7 @@ function App() {
     // mod:123 — in-app mod detail page
     if (activeTab.startsWith("mod:")) {
       const modNumber = activeTab.slice(4)
-      return <ModDetailPage key={modNumber} modNumber={modNumber} onNavigate={navigateTo} onBack={handleBack} />
+      return <ModDetailPage key={modNumber} modNumber={modNumber} localPaths={localPaths} onSetPath={handleSetPath} onNavigate={navigateTo} onBack={handleBack} />
     }
 
     // post:123 — in-app post detail page
@@ -180,7 +186,7 @@ function App() {
 
     switch (activeTab) {
       case "mods":
-        return <ModsPage searchQuery={searchQuery} onNavigate={navigateTo} />
+        return <ModsPage searchQuery={searchQuery} localPaths={localPaths} onSetPath={handleSetPath} onNavigate={navigateTo} />
       case "community":
         return <CommunityFeed searchQuery={searchQuery} onNavigate={navigateTo} />
       case "games":
@@ -202,7 +208,7 @@ function App() {
       case "settings":
         return <SettingsPage onNavigate={navigateTo} />
       default:
-        return <ModsPage searchQuery={searchQuery} onNavigate={navigateTo} />
+        return <ModsPage searchQuery={searchQuery} localPaths={localPaths} onSetPath={handleSetPath} onNavigate={navigateTo} />
     }
   }, [activeTab, searchQuery, localPaths, customGames, platformGames, persistPaths, handleSetPath, navigateTo, handleBack])
 
@@ -227,6 +233,7 @@ function App() {
         </div>
         <WindowControls />
         <ToastViewport />
+        <ConfirmDialog />
       </div>
     </ForceUpdateGate>
   )

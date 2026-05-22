@@ -1,30 +1,29 @@
-import { Clock, Loader2, SlidersHorizontal, Star, TrendingUp } from "lucide-react"
+import { CheckCircle2, Clock, Loader2, SlidersHorizontal, Star, TrendingUp } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { fetchMods, getDownloadToken } from "@/lib/api"
+import { fetchMods } from "@/lib/api"
 import type { SearchModSummary } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
 import { cn } from "@/lib/utils"
-import { useDownloadStore } from "@/store/download"
+import { queueOneClickInstallByModNumber, showOneClickInstallError } from "@/lib/mod-install"
 
 const categories = ["全部", "热门", "最新", "推荐"] as const
 
 interface ModsPageProps {
   searchQuery: string
+  localPaths: Record<string, string>
+  onSetPath: (gameId: string) => Promise<string | null | undefined>
   onNavigate?: (tab: string) => void
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "未知错误"
-}
-
-export function ModsPage({ searchQuery, onNavigate }: ModsPageProps) {
+export function ModsPage({ searchQuery, localPaths, onSetPath, onNavigate }: ModsPageProps) {
   const [activeCategory, setActiveCategory] = useState<(typeof categories)[number]>("全部")
   const [mods, setMods] = useState<SearchModSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [installingId, setInstallingId] = useState<string | null>(null)
   const PAGE_SIZE = 24
 
   const loadMods = useCallback(async (p: number) => {
@@ -67,21 +66,18 @@ export function ModsPage({ searchQuery, onNavigate }: ModsPageProps) {
     }
   }, [activeCategory, mods])
 
-  const startDownload = async (mod: SearchModSummary) => {
+  const startInstall = async (mod: SearchModSummary) => {
+    if (!mod.mod_number) { openModDetail(mod.mod_number || mod.id); return }
+    setInstallingId(mod.id)
     try {
-      const tokenInfo = await getDownloadToken(mod.id)
-      await useDownloadStore.getState().addDownload({
-        id: `dl-${Date.now()}`,
-        name: mod.title,
-        gameId: mod.game?.id || mod.game_id,
-        game: mod.game?.name || "未知游戏",
-        url: tokenInfo.url,
-        fileName: tokenInfo.fileName,
-        size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
-        platformModId: mod.id,
+      await queueOneClickInstallByModNumber({
+        modNumber: mod.mod_number,
+        resolveGamePath: async (gameId) => localPaths[gameId] || await onSetPath(gameId),
       })
     } catch (error) {
-      alert(`下载请求失败: ${getErrorMessage(error)}`)
+      showOneClickInstallError(error)
+    } finally {
+      setInstallingId(null)
     }
   }
 
@@ -209,8 +205,9 @@ export function ModsPage({ searchQuery, onNavigate }: ModsPageProps) {
                         <Button variant="outline" size="sm" className="flex-1 h-7 text-[11px] rounded-lg" onClick={() => openModDetail(mod.mod_number || mod.id)}>
                           详情
                         </Button>
-                        <Button size="sm" className="flex-1 h-7 text-[11px] rounded-lg" onClick={() => void startDownload(mod)}>
-                          下载
+                        <Button size="sm" className="flex-1 h-7 text-[11px] rounded-lg" onClick={() => void startInstall(mod)} disabled={installingId === mod.id}>
+                          {installingId === mod.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                          一键安装
                         </Button>
                       </div>
                     </div>

@@ -6,6 +6,8 @@ const { spawn } = require('child_process')
 
 const STATE_VERSION = 1
 const JUNK_NAMES = new Set(['Thumbs.db', 'desktop.ini', '.DS_Store'])
+const SKIPPED_INSTALL_FILENAMES = new Set(['license.txt', 'readme.txt'])
+const ARCHIVE_EXTENSION_PATTERN = /(\.tar\.gz|\.tgz|\.zip|\.rar|\.7z|\.tar|\.gz)$/i
 
 function getAppBaseDir(app) {
   return app.isPackaged ? path.dirname(app.getPath('exe')) : path.resolve(__dirname, '..')
@@ -32,6 +34,11 @@ function createId(prefix) {
 
 function createStableHash(value) {
   return crypto.createHash('sha1').update(value).digest('hex')
+}
+
+function shouldSkipInstallFile(relativePath) {
+  const fileName = String(relativePath || '').split('/').pop().toLowerCase()
+  return SKIPPED_INSTALL_FILENAMES.has(fileName)
 }
 
 async function pathExists(targetPath) {
@@ -193,6 +200,33 @@ async function resolveContentRoot(extractDir) {
   }
 
   return currentDir
+}
+
+function normalizeContentRootName(value) {
+  return String(value || '')
+    .replace(ARCHIVE_EXTENSION_PATTERN, '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+}
+
+async function resolveDownloadedContentRoot(extractDir, input) {
+  const entries = (await fsPromises.readdir(extractDir, { withFileTypes: true }))
+    .filter((entry) => !JUNK_NAMES.has(entry.name) && entry.name !== '__MACOSX')
+  const files = entries.filter((entry) => entry.isFile())
+  const directories = entries.filter((entry) => entry.isDirectory())
+
+  if (files.length !== 0 || directories.length !== 1) {
+    return extractDir
+  }
+
+  const wrapperName = normalizeContentRootName(directories[0].name)
+  const expectedNames = [
+    path.basename(input.archiveFileName || ''),
+    path.basename(input.modName || ''),
+  ].map(normalizeContentRootName).filter(Boolean)
+
+  return expectedNames.includes(wrapperName) ? path.join(extractDir, directories[0].name) : extractDir
 }
 
 function getGameDirs(app, gameName, modsRootDir) {
@@ -407,6 +441,10 @@ async function computeConflictPaths(state, modRecord, cache) {
   const conflicts = []
 
   for (const file of indexedManifest.manifest.files || []) {
+    if (shouldSkipInstallFile(file.relativePath)) {
+      continue
+    }
+
     const key = String(file.relativePath || '').toLowerCase()
     const record = state.files[key]
     if (!record || !Array.isArray(record.owners) || record.owners.length === 0) {
@@ -447,6 +485,7 @@ function toSummary(modRecord, conflicts) {
     folderName: modRecord.folderName,
     platformModId: modRecord.platformModId || null,
     platformVersionId: modRecord.platformVersionId || null,
+    modNumber: modRecord.modNumber || null,
   }
 }
 
@@ -469,24 +508,18 @@ async function importExternalMod(app, input, modsRootDir) {
     throw new Error('导入源不存在')
   }
 
-  if (input.sourceType === 'download' && input.platformModId) {
-    const existing = listModRecords(state).find((modRecord) => {
-      if (modRecord.sourceType !== 'download' || modRecord.platformModId !== input.platformModId) {
-        return false
-      }
+  const existingForPlatform = (input.sourceType === 'download' && input.platformModId)
+    ? listModRecords(state).find((m) => m.sourceType === 'download' && m.platformModId === input.platformModId)
+    : null
 
-      if (input.platformVersionId) {
-        return modRecord.platformVersionId === input.platformVersionId
-      }
+  if (existingForPlatform && input.platformVersionId && existingForPlatform.platformVersionId === input.platformVersionId) {
+    const cache = new Map()
+    const conflicts = await computeConflictPaths(state, existingForPlatform, cache)
+    return toSummary(existingForPlatform, conflicts)
+  }
 
-      return true
-    })
-
-    if (existing) {
-      const cache = new Map()
-      const conflicts = await computeConflictPaths(state, existing, cache)
-      return toSummary(existing, conflicts)
-    }
+  if (existingForPlatform && existingForPlatform.installed) {
+    throw new Error('请先卸载当前版本后再升级')
   }
 
   const tempRoot = path.join(dirs.tempDir, createId('import'))
@@ -498,7 +531,7 @@ async function importExternalMod(app, input, modsRootDir) {
 
     if (isArchive) {
       await extractArchive(input.sourcePath, tempExtractDir)
-      const contentRoot = await resolveContentRoot(tempExtractDir)
+      const contentRoot = input.sourceType === 'download' ? await resolveDownloadedContentRoot(tempExtractDir, input) : await resolveContentRoot(tempExtractDir)
       await copyDirectoryContents(contentRoot, tempSourceDir)
     } else {
       await copyDirectoryContents(input.sourcePath, tempSourceDir)
@@ -509,32 +542,71 @@ async function importExternalMod(app, input, modsRootDir) {
       throw new Error('导入源中未找到可安装文件')
     }
 
-    const folderName = await ensureUniqueFolder(dirs.gameDir, resolveImportName(input))
-    const modDir = path.join(dirs.gameDir, folderName)
-    const sourceDir = path.join(modDir, 'source')
-    await ensureDir(modDir)
-    await fsPromises.rename(tempSourceDir, sourceDir)
+    let modRecord
+    let modDir
+    let sourceDir
+
+    if (existingForPlatform) {
+      modRecord = existingForPlatform
+      modDir = existingForPlatform.libraryPath
+      sourceDir = path.join(modDir, 'source')
+      await removePath(sourceDir)
+      const entries = await fsPromises.readdir(modDir, { withFileTypes: true }).catch(() => [])
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.startsWith('original.')) {
+          await removeFileIfExists(path.join(modDir, entry.name))
+        }
+      }
+    } else {
+      const hasFixedPlatformFolder = input.sourceType === 'download' && input.modNumber
+      const preferredName = hasFixedPlatformFolder ? String(input.modNumber) : resolveImportName(input)
+      const folderName = hasFixedPlatformFolder ? sanitizeSegment(preferredName) : await ensureUniqueFolder(dirs.gameDir, preferredName)
+      modDir = path.join(dirs.gameDir, folderName)
+      sourceDir = path.join(modDir, 'source')
+      await ensureDir(modDir)
+      await removePath(sourceDir)
+      modRecord = {
+        id: createId('mod'),
+        name: resolveImportName(input),
+        gameId: input.gameId,
+        gameName: input.gameName,
+        sourceType: input.sourceType,
+        importedAt: new Date().toISOString(),
+        installed: false,
+        installedAt: null,
+        fileCount: 0,
+        libraryPath: modDir,
+        folderName,
+        platformModId: input.platformModId || null,
+        platformVersionId: input.platformVersionId || null,
+        modNumber: input.modNumber || null,
+        lastGamePath: null,
+      }
+    }
+
+    try {
+      await fsPromises.rename(tempSourceDir, sourceDir)
+    } catch (renameErr) {
+      if (renameErr.code === 'EPERM' || renameErr.code === 'EACCES' || renameErr.code === 'EXDEV') {
+        await copyDirectoryContents(tempSourceDir, sourceDir)
+      } else {
+        throw renameErr
+      }
+    }
 
     if (isArchive) {
       const ext = path.extname(input.sourcePath) || '.zip'
-      await copyFileSafe(input.sourcePath, path.join(modDir, `original${ext}`))
+      const originalPath = path.join(modDir, `original${ext.toLowerCase()}`)
+      if (path.resolve(input.sourcePath) !== path.resolve(originalPath)) {
+        await copyFileSafe(input.sourcePath, originalPath)
+      }
     }
 
-    const modRecord = {
-      id: createId('mod'),
-      name: resolveImportName(input),
-      gameId: input.gameId,
-      gameName: input.gameName,
-      sourceType: input.sourceType,
-      importedAt: new Date().toISOString(),
-      installed: false,
-      installedAt: null,
-      fileCount: 0,
-      libraryPath: modDir,
-      folderName,
-      platformModId: input.platformModId || null,
-      platformVersionId: input.platformVersionId || null,
-      lastGamePath: null,
+    if (existingForPlatform) {
+      modRecord.name = resolveImportName(input) || modRecord.name
+      modRecord.platformVersionId = input.platformVersionId || null
+      modRecord.modNumber = input.modNumber || modRecord.modNumber || null
+      modRecord.importedAt = new Date().toISOString()
     }
 
     const manifest = await buildManifest(modRecord)
@@ -670,6 +742,10 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
    const conflicts = []
 
    for (const file of manifestIndex.manifest.files) {
+     if (shouldSkipInstallFile(file.relativePath)) {
+       continue
+     }
+
      const key = String(file.relativePath || '').toLowerCase()
      const targetPath = resolveGamePathTarget(input.gamePath, file.relativePath)
      const sourcePath = path.join(modRecord.libraryPath, 'source', ...file.relativePath.split('/'))
@@ -804,6 +880,8 @@ async function ensureRecordMatchesActiveFile(record, state, cache, gamePath) {
      modName: input.modName,
      platformModId: input.platformModId,
      platformVersionId: input.platformVersionId,
+     modNumber: input.modNumber,
+     archiveFileName: input.archiveFileName,
    }, modsRootDir)
  }
 

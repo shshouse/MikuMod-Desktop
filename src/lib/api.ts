@@ -204,6 +204,16 @@ export interface ModDetailGameSummary {
   game_number?: string
 }
 
+export interface ModDependencySummary {
+  mod_id: string
+  mod_number?: number | null
+  title?: string | null
+  thumbnail_url?: string | null
+  latest_version?: string | null
+  dependency_type?: string
+  version_constraint?: string | null
+}
+
 export interface ModDetailSummary {
   id: string
   mod_number: string
@@ -220,6 +230,7 @@ export interface ModDetailSummary {
   game_id?: string
   game?: ModDetailGameSummary | null
   author?: ModDetailAuthorSummary | null
+  dependencies?: ModDependencySummary[]
 }
 
 export interface ModVersionSummary {

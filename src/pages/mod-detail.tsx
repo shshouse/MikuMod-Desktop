@@ -1,7 +1,7 @@
 import {
   ArrowLeft,
   Calendar,
-  Download,
+  CheckCircle2,
   Eye,
   FileText,
   Loader2,
@@ -15,9 +15,9 @@ import { useEffect, useMemo, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
 import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
-import { fetchModDetail, getDownloadToken, submitModReview } from "@/lib/api"
+import { fetchModDetail, submitModReview } from "@/lib/api"
 import type { ModDetailResponse, ModReviewSummary, ModVersionSummary } from "@/lib/api"
-import { useDownloadStore } from "@/store/download"
+import { queueOneClickInstall, showOneClickInstallError } from "@/lib/mod-install"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
@@ -25,6 +25,8 @@ const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
 
 interface ModDetailPageProps {
   modNumber: string
+  localPaths: Record<string, string>
+  onSetPath: (gameId: string) => Promise<string | null | undefined>
   onNavigate: (tab: string) => void
   onBack: () => void
 }
@@ -37,7 +39,7 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "未知错误"
 }
 
-export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPageProps) {
+export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, onBack }: ModDetailPageProps) {
   const [data, setData] = useState<ModDetailResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
@@ -103,24 +105,17 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
     ].filter((url): url is string => !!url)))
   }, [mod])
 
-  const startDownload = async () => {
-    if (!mod) return
+  const startInstall = async () => {
+    if (!mod || !data) return
     setDownloading(true)
     try {
-      const tokenInfo = await getDownloadToken(mod.id, selectedVersionId || undefined)
-      await useDownloadStore.getState().addDownload({
-        id: `dl-${Date.now()}`,
-        name: mod.title,
-        gameId: mod.game?.id || mod.game_id,
-        game: mod.game?.name || "未知游戏",
-        url: tokenInfo.url,
-        fileName: tokenInfo.fileName,
-        size: tokenInfo.fileSize ? `${(tokenInfo.fileSize / (1024 * 1024)).toFixed(2)} MB` : "未知",
-        platformModId: mod.id,
-        platformVersionId: selectedVersion?.id,
+      await queueOneClickInstall({
+        detail: data,
+        selectedVersionId,
+        resolveGamePath: async (gameId) => localPaths[gameId] || await onSetPath(gameId),
       })
-    } catch (downloadError) {
-      alert(`下载失败: ${getErrorMessage(downloadError)}`)
+    } catch (err) {
+      showOneClickInstallError(err)
     } finally {
       setDownloading(false)
     }
@@ -385,9 +380,9 @@ export function ModDetailPage({ modNumber, onNavigate, onBack }: ModDetailPagePr
         <div className="w-full max-w-68">
           {/* Download card */}
           <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-            <Button className="w-full gap-2" onClick={startDownload} disabled={downloading || versions.length === 0}>
-              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              {downloading ? "准备下载..." : "下载模组"}
+            <Button className="w-full gap-2" onClick={startInstall} disabled={downloading || versions.length === 0}>
+              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              {downloading ? "准备中..." : "一键安装"}
             </Button>
 
             {selectedVersion && (
