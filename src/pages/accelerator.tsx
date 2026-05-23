@@ -24,41 +24,17 @@ interface ResolvedMap {
 
 const GROUP_LABELS: Record<string, string> = {
   steam: "Steam 服务",
-  twitch: "Twitch 直播",
-  origin: "Origin",
-  uplay: "Uplay",
-  public_cdn: "公共 CDN",
-  captcha: "国外验证码平台",
   github: "GitHub",
-  nexusmods: "Nexus Mods",
-  docker: "Docker Hub",
-  greasyfork: "Greasyfork",
-  fandom: "Fandom",
 }
 
 const GROUP_BRAND_ICONS: Record<string, string> = {
   steam: "https://cdn.simpleicons.org/steam/66c0f4",
-  twitch: "https://cdn.simpleicons.org/twitch/a970ff",
-  origin: "https://cdn.simpleicons.org/origin/f56c2d",
-  uplay: "https://cdn.simpleicons.org/ubisoft/00b4ff",
   github: "https://cdn.simpleicons.org/github/ffffff",
-  docker: "https://cdn.simpleicons.org/docker/2496ed",
-  greasyfork: "https://cdn.simpleicons.org/greasyfork/e31c25",
-  fandom: "https://cdn.simpleicons.org/fandom/00d6d6",
 }
 
 const GROUP_ORDER = [
   "steam",
   "github",
-  "twitch",
-  "origin",
-  "uplay",
-  "public_cdn",
-  "captcha",
-  "nexusmods",
-  "docker",
-  "greasyfork",
-  "fandom",
 ]
 
 const CHECKED_STORAGE_KEY = "mmd_accelerator_checked"
@@ -458,7 +434,7 @@ export function AcceleratorPage() {
               <p className="text-xs text-zinc-400">
                 {running
                   ? `已加速 ${Object.keys(resolved).length} 个域名`
-                  : "加速 GitHub、Steam、Nexus Mods 等站点访问"
+                  : "加速 Steam 和 GitHub 站点访问"
                 }
               </p>
             </div>

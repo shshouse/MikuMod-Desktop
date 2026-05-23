@@ -56,8 +56,17 @@ const WORKER_RELAY_DOMAINS = new Set([
   'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
   'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
   'alive.github.com',
-  'twitch.tv', 'www.twitch.tv', 'api.twitch.tv', 'ttvnw.net',
-  'www.recaptcha.net', 'fonts.googleapis.com', 'fonts.gstatic.com',
+])
+const SUPPORTED_ACCELERATOR_DOMAINS = new Set([
+  'steamcdn-a.akamaihd.net', 'cdn.akamai.steamstatic.com', 'steamcommunity-a.akamaihd.net',
+  'media.steampowered.com', 'steamcommunity.com', 'store.steampowered.com',
+  'api.steampowered.com', 'login.steampowered.com', 'help.steampowered.com',
+  'github.com', 'github.dev', 'api.github.com', 'github.githubassets.com',
+  'education.github.com', 'resources.github.com', 'uploads.github.com',
+  'archiveprogram.github.com', 'raw.githubusercontent.com', 'avatars.githubusercontent.com',
+  'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
+  'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
+  'alive.github.com',
 ])
 
 function getWorkerRelayConfig() {
@@ -85,81 +94,6 @@ function findDomainsRequiringWorkerRelay(domains) {
 
 function getWorkerRelaySkippedMessage(relayDomains) {
   return `已跳过需要 Worker Relay 的域名：${relayDomains.slice(0, 3).join('、')}${relayDomains.length > 3 ? ' 等' : ''}`
-}
-
-let processElevatedCache = null
-
-function encodePowerShell(script) {
-  return Buffer.from(script, 'utf16le').toString('base64')
-}
-
-function powerShellString(value) {
-  return `'${String(value).replace(/'/g, "''")}'`
-}
-
-function runPowerShell(script) {
-  execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShell(script)}`, {
-    windowsHide: true,
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
-}
-
-function runElevatedPowerShell(script) {
-  const inner = encodePowerShell(script)
-  const outer = `
-$ErrorActionPreference = 'Stop'
-try {
-  $process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', '${inner}') -Verb RunAs -Wait -PassThru
-  exit $process.ExitCode
-} catch {
-  exit 1223
-}
-`
-  runPowerShell(outer)
-}
-
-function isProcessElevated() {
-  if (process.platform !== 'win32') return true
-  if (processElevatedCache !== null) return processElevatedCache
-  try {
-    const output = execSync('powershell.exe -NoProfile -Command "([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"', {
-      windowsHide: true,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    processElevatedCache = String(output).trim().toLowerCase() === 'true'
-  } catch {
-    processElevatedCache = false
-  }
-  return processElevatedCache
-}
-
-function isPermissionError(error) {
-  const message = String(error?.message || '').toLowerCase()
-  return error?.code === 'EACCES'
-    || error?.code === 'EPERM'
-    || message.includes('access is denied')
-    || message.includes('access denied')
-    || message.includes('拒绝访问')
-    || message.includes('权限')
-}
-
-function runPrivilegedPowerShell(script, allowElevation) {
-  if (isProcessElevated()) {
-    runPowerShell(script)
-    return
-  }
-  if (!allowElevation) {
-    throw new Error('需要管理员权限')
-  }
-  runElevatedPowerShell(script)
-}
-
-function writeTempFile(name, content) {
-  const filePath = path.join(app.getPath('temp'), `${name}-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.tmp`)
-  fs.writeFileSync(filePath, content, 'utf-8')
-  return filePath
 }
 
 let acceleratorState = {
@@ -292,15 +226,16 @@ function isCATrusted(expectedFingerprint) {
   return false
 }
 
-function installCATrust(derPath, expectedFingerprint, options = {}) {
+function installCATrust(derPath, expectedFingerprint) {
   if (isCATrusted(expectedFingerprint)) return true
-  uninstallCATrust(options)
+  uninstallCATrust()
   try {
-    const script = `
-$ErrorActionPreference = 'Stop'
-certutil.exe -f -addstore Root ${powerShellString(derPath)} | Out-Null
-`
-    runPrivilegedPowerShell(script, options.allowElevation === true)
+    // 直接用 certutil 安装（进程已是管理员权限，不需要提权）
+    execSync(`certutil -f -addstore Root "${derPath}"`, {
+      windowsHide: true,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
     const trusted = isCATrusted(expectedFingerprint)
     if (trusted) console.log('[Accelerator] CA certificate installed successfully')
     return trusted
@@ -311,7 +246,7 @@ certutil.exe -f -addstore Root ${powerShellString(derPath)} | Out-Null
 }
 
 /** 从系统信任存储移除 CA 证书 */
-function uninstallCATrust(options = {}) {
+function uninstallCATrust() {
   try {
     // 先查证书序列号
     const output = execSync(
@@ -327,17 +262,12 @@ function uninstallCATrust(options = {}) {
     }
     for (const certId of certIds) {
       if (!certId) continue
-      const script = `
-$ErrorActionPreference = 'Stop'
-certutil.exe -delstore Root ${powerShellString(certId)} | Out-Null
-`
-      runPrivilegedPowerShell(script, options.allowElevation === true)
+      execSync(`certutil -delstore Root "${certId}"`, {
+        windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+      })
     }
     if (certIds.size > 0) console.log('[Accelerator] CA certificate removed from trust store')
-  } catch (error) {
-    if (options.allowElevation === true && isPermissionError(error)) {
-      throw error
-    }
+  } catch {
     // 没找到或删除失败，忽略
   }
 }
@@ -490,45 +420,32 @@ function isLegacyAcceleratorHostsLine(line) {
   return (ip === '127.0.0.1' || ip === '::1') && LEGACY_ACCELERATOR_HOSTS_DOMAINS.has(domain)
 }
 
-function writeHosts(newContent, options = {}) {
+function writeHosts(newContent) {
+  // 进程已是管理员权限，直接写 hosts 文件
   acceleratorState.hostsIgnoreUntil = Date.now() + HOSTS_SELF_HEAL_IGNORE_MS
+  fs.writeFileSync(HOSTS_PATH, newContent, 'utf-8')
+  // 刷新 DNS 缓存（直接调用 ipconfig，不走 PowerShell）
   try {
-    fs.writeFileSync(HOSTS_PATH, newContent, 'utf-8')
-    try {
-      execSync('ipconfig /flushdns', { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
-    } catch {}
-  } catch (error) {
-    if (!isPermissionError(error)) throw error
-    const sourcePath = writeTempFile('mikumod-hosts', newContent)
-    try {
-      const script = `
-$ErrorActionPreference = 'Stop'
-Copy-Item -LiteralPath ${powerShellString(sourcePath)} -Destination ${powerShellString(HOSTS_PATH)} -Force
-ipconfig.exe /flushdns | Out-Null
-`
-      runPrivilegedPowerShell(script, options.allowElevation === true)
-    } finally {
-      try { fs.unlinkSync(sourcePath) } catch {}
-    }
-  }
+    execSync('ipconfig /flushdns', { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+  } catch {}
 }
 
-function applyHostsProxy(domainList, options = {}) {
+function applyHostsProxy(domainList) {
   const cleanDomains = domainList.map(normalizeDomain).filter(Boolean)
   if (cleanDomains.length === 0) return { success: false, error: '没有可用的加速域名' }
   const currentContent = readHostsFile()
   const cleanContent = removeExistingEntries(currentContent)
   const newEntries = buildHostsEntries(cleanDomains)
   const newContent = cleanContent.trimEnd() + '\n\n' + newEntries + '\n'
-  try { writeHosts(newContent, options); return { success: true } }
+  try { writeHosts(newContent); return { success: true } }
   catch (e) { return { success: false, error: e.message } }
 }
 
-function removeHosts(options = {}) {
+function removeHosts() {
   const currentContent = readHostsFile()
   if (!containsMikuModEntries(currentContent)) return { success: true }
   const cleanContent = removeExistingEntries(currentContent)
-  try { writeHosts(cleanContent.trimEnd() + '\n', options); return { success: true } }
+  try { writeHosts(cleanContent.trimEnd() + '\n'); return { success: true } }
   catch (e) { return { success: false, error: e.message } }
 }
 
@@ -661,6 +578,10 @@ function normalizeDomain(value) {
   return isValidDomainName(domain) ? domain : null
 }
 
+function isSupportedAcceleratorDomain(domain) {
+  return SUPPORTED_ACCELERATOR_DOMAINS.has(domain)
+}
+
 function normalizeIP(value) {
   const ip = String(value || '').trim()
   return net.isIP(ip) ? ip : null
@@ -673,7 +594,7 @@ function normalizeEnabledDomains(domains) {
   for (const item of domains) {
     if (!item || typeof item !== 'object') continue
     const domain = normalizeDomain(item.match_domain)
-    if (!domain || seen.has(domain)) continue
+    if (!domain || !isSupportedAcceleratorDomain(domain) || seen.has(domain)) continue
     result.push({ ...item, match_domain: domain, forward_ip: normalizeIP(item.forward_ip) })
     seen.add(domain)
   }
@@ -1034,7 +955,7 @@ function forwardRequest(clientReq, clientRes, domain, realIP) {
 
 /**
  * 通过 Cloudflare Worker 中转请求
- * 用于 Fastly CDN + GFW SNI 双重封锁的域名（GitHub、Twitch 等）
+ * 用于 Fastly CDN + GFW SNI 双重封锁的 GitHub 域名
  */
 const workerAgent = new https.Agent({
   keepAlive: true,
@@ -1276,8 +1197,7 @@ function registerAcceleratorIPC() {
 
     try {
       stopHostsSelfHeal()
-      const privilegedOptions = { allowElevation: true }
-      const preCleanResult = removeHosts(privilegedOptions)
+      const preCleanResult = removeHosts()
       if (!preCleanResult.success) return { success: false, error: `清理残留 hosts 失败：${preCleanResult.error}` }
 
       const relayConfig = getWorkerRelayConfig()
@@ -1310,9 +1230,9 @@ function registerAcceleratorIPC() {
       const derPath = path.join(certDir, 'mikumod_ca.cer')
       fs.writeFileSync(derPath, certToDerBuffer(ca.forgeCert))
 
-      if (!installCATrust(derPath, fingerprint, privilegedOptions)) {
-        uninstallCATrust(privilegedOptions)
-        return { success: false, error: 'CA 证书未被系统信任，请允许管理员权限弹窗后重试' }
+      if (!installCATrust(derPath, fingerprint)) {
+        uninstallCATrust()
+        return { success: false, error: 'CA 证书未被系统信任，请以管理员权限启动并允许安装根证书' }
       }
 
       // 3. DoH 解析
@@ -1350,7 +1270,7 @@ function registerAcceleratorIPC() {
         .map(d => d.match_domain)
 
       if (domainList.length === 0) {
-        uninstallCATrust(privilegedOptions)
+        uninstallCATrust()
         return { success: false, error: '所选域名解析失败，未修改系统 hosts' }
       }
 
@@ -1361,11 +1281,11 @@ function registerAcceleratorIPC() {
       await ensureProxyServerReady(ca.forgeCert)
 
       // 5. hosts 指向 127.0.0.1
-      const hostsResult = applyHostsProxy(domainList, privilegedOptions)
+      const hostsResult = applyHostsProxy(domainList)
       if (!hostsResult.success) {
         await stopProxyServer()
         resetRuntimeState()
-        uninstallCATrust(privilegedOptions)
+        uninstallCATrust()
         return hostsResult
       }
 
@@ -1377,10 +1297,10 @@ function registerAcceleratorIPC() {
       domainList.forEach(d => { hostsMap[d] = acceleratorState.resolved[d] })
       return { success: true, hostsMap, warning, skippedDomains: skipRelayDomains ? relayDomains : [] }
     } catch (e) {
-      removeHosts({ allowElevation: true })
+      removeHosts()
       await stopProxyServer()
       resetRuntimeState()
-      uninstallCATrust({ allowElevation: true })
+      uninstallCATrust()
       return { success: false, error: e.message }
     }
   })
@@ -1388,7 +1308,7 @@ function registerAcceleratorIPC() {
   // === 停止加速 ===
   ipcMain.handle('accelerator-stop', async () => {
     acceleratorState.hostsSelfHealPaused = true
-    const result = removeHosts({ allowElevation: true })
+    const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
       return result
@@ -1401,7 +1321,7 @@ function registerAcceleratorIPC() {
 
   ipcMain.handle('accelerator-repair', async () => {
     acceleratorState.hostsSelfHealPaused = true
-    const result = removeHosts({ allowElevation: true })
+    const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
       return result
@@ -1409,7 +1329,7 @@ function registerAcceleratorIPC() {
     stopHostsSelfHeal()
     await stopProxyServer()
     resetRuntimeState()
-    uninstallCATrust({ allowElevation: true })
+    uninstallCATrust()
     return result
   })
 
@@ -1425,12 +1345,11 @@ function registerAcceleratorIPC() {
 }
 
 function cleanupOnExit() {
-  const wasRunning = acceleratorState.running
   stopHostsSelfHeal()
   clearProxyShutdownTimer()
   acceleratorState.running = false
   try {
-    removeHosts({ allowElevation: wasRunning })
+    removeHosts()
   } catch {}
   if (acceleratorState.proxyServer) {
     try { acceleratorState.proxyServer.close() } catch {}
