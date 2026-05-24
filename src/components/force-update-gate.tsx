@@ -32,7 +32,9 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
                 const json = await requestJson<{ success: boolean; data: PolicyResponse }>(url, { timeoutMs: 8000 })
                 if (cancelled) return
                 if (json.success && json.data?.force_update) setPolicy(json.data)
-            } catch {}
+            } catch {
+                // Network error, skip force update check
+            }
         }
         void run()
         return () => { cancelled = true }

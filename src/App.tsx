@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Sidebar } from "@/components/layout/sidebar"
 import { TopBar } from "@/components/layout/top-bar"
 import { WindowControls } from "@/components/layout/window-controls"
@@ -147,6 +147,30 @@ function App() {
     setHistoryIndex(nextIndex)
     setActiveTab(history[nextIndex])
   }, [canGoForward, history, historyIndex])
+
+  const handleBackRef = useRef(handleBack)
+  const handleForwardRef = useRef(handleForward)
+
+  useEffect(() => {
+    handleBackRef.current = handleBack
+  }, [handleBack])
+  useEffect(() => {
+    handleForwardRef.current = handleForward
+  }, [handleForward])
+
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault()
+        handleBackRef.current()
+      } else if (e.button === 4) {
+        e.preventDefault()
+        handleForwardRef.current()
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
 
   const currentPage = useMemo(() => {
     // mod:123 — in-app mod detail page

@@ -235,7 +235,7 @@ export interface ModDetailSummary {
 
 export interface ModVersionSummary {
   id: string
-  version_number?: string | null
+  version?: string | null
   changelog?: string | null
   file_size?: number | null
   created_at: string

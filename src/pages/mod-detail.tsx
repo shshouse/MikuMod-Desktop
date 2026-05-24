@@ -2,13 +2,14 @@ import {
   ArrowLeft,
   Calendar,
   CheckCircle2,
+  Download,
   Eye,
   FileText,
+  GitBranch,
   Loader2,
   MessageSquare,
   Package,
   ThumbsUp,
-  TrendingUp,
   User,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -22,6 +23,8 @@ import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
+
+type ActiveTab = "description" | "versions" | "dependencies" | "reviews"
 
 interface ModDetailPageProps {
   modNumber: string
@@ -39,16 +42,31 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "未知错误"
 }
 
+function formatNumber(num?: number | null): string {
+  if (num == null) return "0"
+  if (num >= 10000) return `${(num / 10000).toFixed(1)}w`
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}k`
+  return num.toLocaleString()
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
 export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, onBack }: ModDetailPageProps) {
   const [data, setData] = useState<ModDetailResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
-  const [activeTab, setActiveTab] = useState<"description" | "versions" | "reviews">("description")
+  const [activeTab, setActiveTab] = useState<ActiveTab>("description")
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [showAllVersions, setShowAllVersions] = useState(false)
 
-  // Review state
   const [reviewContent, setReviewContent] = useState("")
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
@@ -95,7 +113,7 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
   const mod = data?.mod
   const versions: ModVersionSummary[] = data?.versions || []
   const reviews: ModReviewSummary[] = data?.reviews || []
-  const selectedVersion = versions.find((version) => version.id === selectedVersionId) || versions[0]
+  const dependencies = mod?.dependencies || []
 
   const screenshots = useMemo(() => {
     if (!mod) return []
@@ -104,6 +122,8 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
       ...(mod.media?.image_urls || []),
     ].filter((url): url is string => !!url)))
   }, [mod])
+
+  const displayedVersions = showAllVersions ? versions : versions.slice(0, 3)
 
   const startInstall = async () => {
     if (!mod || !data) return
@@ -126,7 +146,6 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
     setReviewSubmitting(true)
     try {
       await submitModReview(mod.id, reviewContent)
-      // Refresh reviews
       const refreshed = await fetchModDetail(modNumber)
       if (refreshed) setData(refreshed)
       setReviewContent("")
@@ -136,6 +155,13 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
       setReviewSubmitting(false)
     }
   }
+
+  const tabs: Array<{ key: ActiveTab; label: string; icon: typeof FileText; count?: number }> = [
+    { key: "description", label: "描述", icon: FileText },
+    { key: "versions", label: "版本", icon: GitBranch, count: versions.length },
+    { key: "dependencies", label: "前置", icon: Package, count: dependencies.length },
+    { key: "reviews", label: "评论", icon: MessageSquare, count: reviews.length },
+  ]
 
   if (isLoading) {
     return (
@@ -161,31 +187,42 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
 
   return (
     <div className="flex h-full overflow-hidden">
+      {/* Left: Gallery + Tabs */}
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {/* Hero / Gallery */}
-        <div className="shrink-0 p-6 pb-0">
+        {/* Gallery */}
+        <div className="p-6 pb-0">
           <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <div className="aspect-[21/9] max-h-[320px] bg-gradient-to-br from-muted to-muted/30 overflow-hidden relative">
-            {screenshots.length > 0 ? (
-              <img
-                src={screenshots[currentImageIndex]}
-                alt={mod.title}
-                className="w-full h-full object-cover"
-              />
-            ) : null}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+            <div className="aspect-video bg-muted relative overflow-hidden">
+              {screenshots.length > 0 ? (
+                screenshots.map((url, idx) => (
+                  <img
+                    key={`${url}-${idx}`}
+                    src={url}
+                    alt={mod.title}
+                    className={cn(
+                      "absolute inset-0 w-full h-full object-contain transition-opacity duration-700",
+                      idx === currentImageIndex ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                ))
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Package className="w-12 h-12 text-muted-foreground" />
+                </div>
+              )}
             </div>
 
-            {/* Thumbnails */}
             {screenshots.length > 1 && (
               <div className="flex gap-2 overflow-x-auto border-t border-border p-3">
-                {screenshots.map((url: string, i: number) => (
+                {screenshots.map((url, i) => (
                   <button
                     key={i}
                     onClick={() => setCurrentImageIndex(i)}
                     className={cn(
-                      "h-14 w-20 shrink-0 rounded-lg border-2 overflow-hidden transition-all",
-                      i === currentImageIndex ? "border-blue-500 shadow-lg" : "border-transparent opacity-70 hover:opacity-100"
+                      "relative h-14 w-20 shrink-0 rounded-lg border-2 overflow-hidden transition-all",
+                      i === currentImageIndex
+                        ? "border-blue-500 ring-2 ring-blue-500/30"
+                        : "border-transparent opacity-70 hover:opacity-100",
                     )}
                   >
                     <img src={url} alt="" className="w-full h-full object-cover" />
@@ -196,243 +233,314 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
           </div>
         </div>
 
-        {/* Content */}
+        {/* Tabs + Content */}
         <div className="px-6 py-5">
-          {/* Main */}
-          <div className="min-w-0 space-y-5">
-            {/* Title & Meta */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
+          <div className="border-b border-border mb-5">
+            <div className="flex gap-1 overflow-x-auto">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={cn(
+                      "flex shrink-0 items-center gap-1.5 whitespace-nowrap px-4 py-3 text-sm border-b-2 -mb-px transition-colors",
+                      activeTab === tab.key
+                        ? "border-blue-500 text-blue-400"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {tab.label}
+                    {tab.count !== undefined && (
+                      <span className="text-xs">({" "}{tab.count})</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-6">
+            {activeTab === "description" && (
+              <div className="max-w-none">
+                {mod.description ? (
+                  <div className="whitespace-pre-wrap text-sm text-foreground/80 leading-relaxed">
+                    {mod.description}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">暂无详细描述</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "versions" && (
+              <div className="space-y-3">
+                {versions.length > 0 ? (
+                  <>
+                    {displayedVersions.map((version, idx) => (
+                      <div
+                        key={version.id}
+                        className={cn(
+                          "p-4 rounded-lg border transition-colors",
+                          version.id === selectedVersionId
+                            ? "border-blue-500 bg-blue-500/5"
+                            : "border-border hover:border-blue-500/30",
+                        )}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-foreground">
+                              v{version.version}
+                            </span>
+                            {idx === 0 && (
+                              <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded-full">
+                                最新
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {formatDate(version.created_at)}
+                          </span>
+                        </div>
+
+                        {version.changelog && (
+                          <p className="text-xs text-muted-foreground mb-3 whitespace-pre-wrap">
+                            {version.changelog}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          {version.file_size && (
+                            <span>大小: {(version.file_size / (1024 * 1024)).toFixed(2)} MB</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {versions.length > 3 && (
+                      <button
+                        onClick={() => setShowAllVersions(!showAllVersions)}
+                        className="w-full py-2 text-blue-400 text-sm flex items-center justify-center gap-1 hover:text-blue-300"
+                      >
+                        {showAllVersions ? "收起" : `查看全部 ${versions.length} 个版本`}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">暂无版本</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "dependencies" && (
+              <div className="space-y-3">
+                {dependencies.length > 0 ? (
+                  dependencies.map((dep) => (
+                    <div
+                      key={dep.mod_id}
+                      className="flex items-center gap-4 p-3 rounded-lg border border-border hover:border-blue-500/30 transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+                        {dep.thumbnail_url ? (
+                          <img src={dep.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <Package className="w-5 h-5 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <button
+                          className="text-sm font-medium text-foreground hover:text-blue-400 text-left"
+                          onClick={() => dep.mod_number && onNavigate(`mod:${dep.mod_number}`)}
+                        >
+                          {dep.title || "未知模组"}
+                        </button>
+                        {dep.version_constraint && (
+                          <div className="text-xs text-muted-foreground">版本: {dep.version_constraint}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">此模组没有前置依赖</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "reviews" && (
+              <div className="space-y-4">
+                {currentUser ? (
+                  <div className="p-4 rounded-lg border border-border bg-muted/30">
+                    <div className="text-sm font-medium text-foreground mb-2">发表评论</div>
+                    <textarea
+                      value={reviewContent}
+                      onChange={(e) => setReviewContent(e.target.value)}
+                      placeholder="分享你对这个模组的看法..."
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                      rows={3}
+                    />
+                    <div className="flex justify-end mt-2">
+                      <Button
+                        size="sm"
+                        onClick={handleSubmitReview}
+                        disabled={reviewSubmitting || !reviewContent.trim()}
+                      >
+                        {reviewSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                        发布
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-lg border border-border bg-muted/30 text-center text-muted-foreground text-sm">
+                    登录后可发表评论
+                  </div>
+                )}
+
+                {reviews.length > 0 ? (
+                  reviews.map((review) => (
+                    <div key={review.id} className="p-4 rounded-lg border border-border">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+                          {review.user?.avatar_url ? (
+                            <img src={review.user.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <User className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <button
+                              className="text-sm font-medium text-foreground hover:underline"
+                              onClick={() => review.user?.user_number && onNavigate(`user:${review.user.user_number}`)}
+                            >
+                              {review.user?.username || "匿名用户"}
+                            </button>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(review.created_at), { locale: zhCN, addSuffix: true })}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground/80 whitespace-pre-wrap">{review.content}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">还没有评论，来说两句吧</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right: Info sidebar card (matches Web端 design) */}
+      <aside className="w-72 shrink-0 overflow-y-auto p-5 flex justify-center">
+        <div className="w-full max-w-64">
+          <div className="bg-card border border-border rounded-xl p-5 space-y-5">
+            {/* Title */}
+            <h1 className="text-xl font-bold text-foreground">{mod.title}</h1>
+
+            {/* Game chip */}
+            <button
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg text-xs text-foreground hover:text-blue-400 transition-colors"
+              onClick={() => mod.game?.game_number && onNavigate(`game:${mod.game.game_number}`)}
+            >
               <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
                 {mod.game?.name || "未知游戏"}
               </span>
-              {mod.tags?.map((tag: string) => (
-                <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">
-                  {tag}
-                </span>
-              ))}
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight mt-2">{mod.title}</h1>
-          </div>
+            </button>
 
-          {/* Author */}
-          <button
-            className="flex items-center gap-3 hover:bg-muted/50 rounded-lg p-2 -ml-2 transition-colors"
-            onClick={() => mod.author?.user_number && onNavigate(`user:${mod.author.user_number}`)}
-          >
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center overflow-hidden">
-              {mod.author?.avatar_url ? (
-                <img src={mod.author.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-4 h-4 text-white" />
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium">{mod.author?.username || "未知作者"}</p>
-              <p className="text-xs text-muted-foreground">
-                发布于 {formatDistanceToNow(new Date(mod.created_at), { locale: zhCN, addSuffix: true })}
-              </p>
-            </div>
-          </button>
-
-          {/* Stats bar */}
-          <div className="flex gap-5 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <TrendingUp className="w-4 h-4" />
-              {(mod.download_count || 0).toLocaleString()} 下载
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Eye className="w-4 h-4" />
-              {(mod.view_count || 0).toLocaleString()} 浏览
-            </span>
-            <span className="flex items-center gap-1.5">
-              <ThumbsUp className="w-4 h-4" />
-              {(mod.like_count || 0).toLocaleString()} 点赞
-            </span>
-          </div>
-
-          {/* Tabs */}
-          <div className="border-b border-border">
-            <div className="flex gap-1">
-              {([
-                { key: "description", label: "描述", icon: FileText },
-                { key: "versions", label: `版本 (${versions.length})`, icon: Package },
-                { key: "reviews", label: `评测 (${reviews.length})`, icon: MessageSquare },
-              ] as const).map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors",
-                    activeTab === tab.key
-                      ? "border-blue-500 text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tab Content */}
-          {activeTab === "description" && (
-            <div className="prose prose-invert prose-sm max-w-none">
-              <div className="whitespace-pre-wrap text-sm text-foreground/80 leading-relaxed">
-                {mod.description || "暂无详细描述"}
+            {/* Stats grid (3-col, matches Web端) */}
+            <div className="grid grid-cols-3 gap-4 py-4 border-y border-border">
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-1 text-base font-bold text-foreground">
+                  <Download className="w-4 h-4 text-blue-400" />
+                  {formatNumber(mod.download_count)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">下载</div>
+              </div>
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-1 text-base font-bold text-foreground">
+                  <Eye className="w-4 h-4 text-blue-400" />
+                  {formatNumber(mod.view_count)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">浏览</div>
+              </div>
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-1 text-base font-bold text-foreground">
+                  <ThumbsUp className="w-4 h-4 text-blue-400" />
+                  {formatNumber(mod.like_count)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">点赞</div>
               </div>
             </div>
-          )}
 
-          {activeTab === "versions" && (
-            <div className="space-y-3">
-              {versions.map((version) => (
-                <div
-                  key={version.id}
-                  className={cn(
-                    "p-4 rounded-xl border transition-all cursor-pointer",
-                    version.id === selectedVersionId
-                      ? "border-blue-500/50 bg-blue-500/5"
-                      : "border-border bg-card hover:border-blue-500/30"
-                  )}
-                  onClick={() => setSelectedVersionId(version.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">v{version.version_number}</span>
-                      {version.id === versions[0]?.id && (
-                        <span className="text-[10px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded">最新</span>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(version.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                  {version.changelog && (
-                    <p className="text-xs text-muted-foreground mt-2 whitespace-pre-wrap">{version.changelog}</p>
-                  )}
-                  {version.file_size && (
-                    <p className="text-xs text-muted-foreground/60 mt-1">
-                      大小: {(version.file_size / (1024 * 1024)).toFixed(2)} MB
-                    </p>
-                  )}
-                </div>
-              ))}
-              {versions.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8">暂无可用版本</p>
-              )}
-            </div>
-          )}
-
-          {activeTab === "reviews" && (
-            <div className="space-y-4">
-              {/* Submit review */}
-              {currentUser && (
-                <div className="p-4 rounded-xl border border-border bg-card space-y-3">
-                  <textarea
-                    value={reviewContent}
-                    onChange={(e) => setReviewContent(e.target.value)}
-                    placeholder="写下你的评测..."
-                    className="w-full h-20 rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  <Button size="sm" onClick={handleSubmitReview} disabled={reviewSubmitting || !reviewContent.trim()}>
-                    {reviewSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "提交评测"}
-                  </Button>
-                </div>
-              )}
-
-              {reviews.map((review) => (
-                <div key={review.id} className="p-4 rounded-xl border border-border bg-card">
-                  <div className="flex items-center justify-between">
-                    <button
-                      className="flex items-center gap-2 hover:underline"
-                      onClick={() => review.user?.user_number && onNavigate(`user:${review.user.user_number}`)}
-                    >
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center overflow-hidden">
-                        {review.user?.avatar_url ? (
-                          <img src={review.user.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <User className="w-3 h-3 text-white" />
-                        )}
-                      </div>
-                      <span className="text-sm font-medium">{review.user?.username || "用户"}</span>
-                    </button>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(review.created_at), { locale: zhCN, addSuffix: true })}
-                    </span>
-                  </div>
-                  <p className="text-sm text-foreground/80 mt-2 whitespace-pre-wrap">{review.content}</p>
-                </div>
-              ))}
-
-              {reviews.length === 0 && !currentUser && (
-                <p className="text-sm text-muted-foreground text-center py-8">暂无评测</p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-      </div>
-
-      <aside className="w-76 shrink-0 bg-background/40 px-4 py-5 overflow-y-auto flex justify-center">
-        <div className="w-full max-w-68">
-          {/* Download card */}
-          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-            <Button className="w-full gap-2" onClick={startInstall} disabled={downloading || versions.length === 0}>
+            {/* Install button */}
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              onClick={startInstall}
+              disabled={downloading || versions.length === 0}
+            >
               {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               {downloading ? "准备中..." : "一键安装"}
             </Button>
 
-            {selectedVersion && (
-              <div className="text-xs text-muted-foreground space-y-2">
-                <div className="flex justify-between">
-                  <span>版本</span>
-                  <span className="text-foreground">v{selectedVersion.version_number}</span>
-                </div>
-                {selectedVersion.file_size && (
-                  <div className="flex justify-between">
-                    <span>大小</span>
-                    <span className="text-foreground">{(selectedVersion.file_size / (1024 * 1024)).toFixed(2)} MB</span>
+            {/* Author */}
+            {mod.author && (
+              <div className="pt-4 border-t border-border">
+                <div className="text-[10px] text-muted-foreground mb-2">作者</div>
+                <button
+                  className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted transition-colors w-full text-left"
+                  onClick={() => mod.author?.user_number && onNavigate(`user:${mod.author.user_number}`)}
+                >
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+                    {mod.author.avatar_url ? (
+                      <img src={mod.author.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    )}
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span>更新时间</span>
-                  <span className="text-foreground">{new Date(selectedVersion.created_at).toLocaleDateString()}</span>
+                  <div>
+                    <div className="text-sm font-medium text-foreground">
+                      {mod.author.username || "匿名"}
+                    </div>
+                    {mod.author.bio && (
+                      <div className="text-[11px] text-muted-foreground line-clamp-1">{mod.author.bio}</div>
+                    )}
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* Tags */}
+            {mod.tags && mod.tags.length > 0 && (
+              <div className="pt-4 border-t border-border">
+                <div className="text-[10px] text-muted-foreground mb-2">标签</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {mod.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2 py-1 bg-muted text-muted-foreground text-[11px] rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Info card */}
-            <div className="border-t border-border pt-4 space-y-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">模组信息</h3>
-              <div className="text-xs space-y-2">
+            {/* Time info */}
+            <div className="pt-4 border-t border-border text-xs text-muted-foreground">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">游戏</span>
-                <span className="text-foreground">{mod.game?.name || "未知"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">模组编号</span>
-                <span className="text-foreground">#{mod.mod_number}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">最新版本</span>
-                <span className="text-foreground">{mod.latest_version || "-"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">总下载</span>
-                <span className="text-foreground">{(mod.download_count || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">发布日期</span>
-                <span className="text-foreground">{new Date(mod.created_at).toLocaleDateString()}</span>
-              </div>
+                <span>发布时间</span>
+                <span>{formatDate(mod.created_at)}</span>
               </div>
             </div>
           </div>
         </div>
       </aside>
-      </div>
+    </div>
   )
 }

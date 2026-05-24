@@ -1,6 +1,7 @@
-import { CheckCircle2, Clock, Loader2, SlidersHorizontal, Star, TrendingUp } from "lucide-react"
+import { Clock, Loader2, SlidersHorizontal, Star, TrendingUp } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { ModCard } from "@/components/mod/mod-card"
 import { fetchMods } from "@/lib/api"
 import type { SearchModSummary } from "@/lib/api"
 import { getDesktopSettings } from "@/lib/desktop-config"
@@ -159,59 +160,13 @@ export function ModsPage({ searchQuery, localPaths, onSetPath, onNavigate }: Mod
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredMods.map((mod) => (
-                  <div
+                  <ModCard
                     key={mod.id}
-                    className="group rounded-xl border border-border/50 bg-background overflow-hidden hover:border-blue-500/30 transition-all duration-200"
-                  >
-                    <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
-                      <div className="aspect-[16/9] bg-muted relative overflow-hidden">
-                        {mod.media?.thumbnail_url ? (
-                          <img
-                            src={mod.media.thumbnail_url}
-                            alt={mod.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
-                        ) : null}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                        <div className="absolute bottom-2 left-2.5">
-                          <span className="text-[10px] font-medium text-white/80 bg-white/10 backdrop-blur-sm rounded-md px-1.5 py-0.5">
-                            {mod.game?.name || "未知游戏"}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-
-                    <div className="p-3 space-y-1.5">
-                      <button className="w-full text-left" onClick={() => openModDetail(mod.mod_number || mod.id)}>
-                        <h3 className="font-medium text-sm leading-tight group-hover:text-blue-400 transition-colors line-clamp-1">
-                          {mod.title}
-                        </h3>
-                      </button>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>{mod.author?.username || "未知作者"}</span>
-                        <span className="flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3" />
-                          {(mod.download_count || 0).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {(mod.tags || []).slice(0, 2).map((tag: string) => (
-                          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-secondary text-secondary-foreground">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="flex gap-1.5 pt-1">
-                        <Button variant="outline" size="sm" className="flex-1 h-7 text-[11px] rounded-lg" onClick={() => openModDetail(mod.mod_number || mod.id)}>
-                          详情
-                        </Button>
-                        <Button size="sm" className="flex-1 h-7 text-[11px] rounded-lg" onClick={() => void startInstall(mod)} disabled={installingId === mod.id}>
-                          {installingId === mod.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                          一键安装
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                    mod={mod}
+                    onDetail={() => openModDetail(mod.mod_number || mod.id)}
+                    onInstall={() => void startInstall(mod)}
+                    installing={installingId === mod.id}
+                  />
                 ))}
               </div>
               {hasMore && (
