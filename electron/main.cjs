@@ -1229,8 +1229,8 @@ app.on('second-instance', (_event, argv) => {
   }
 })
 
-app.on('window-all-closed', () => {
-  try { cleanupOnExit() } catch {}
+app.on('window-all-closed', async () => {
+  try { await cleanupOnExit() } catch {}
   if (process.platform !== 'darwin') {
     app.quit()
   }

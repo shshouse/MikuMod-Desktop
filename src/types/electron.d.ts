@@ -34,6 +34,8 @@ export interface DownloadResumeData {
   startTime?: number
 }
 
+type AcceleratorProxyMode = "system" | "hosts" | null
+
 export interface ElectronAPI {
   getAppDir: () => Promise<string>
   getAppDataDir: () => Promise<string>
@@ -88,13 +90,13 @@ export interface ElectronAPI {
   uninstallManagedMod: (input: UninstallManagedModInput) => Promise<UninstallManagedModResult>
 
   // 加速器
-  acceleratorStatus: () => Promise<{ running: boolean; resolved: Record<string, string>; enabledGroups: string[] }>
+  acceleratorStatus: () => Promise<{ running: boolean; resolved: Record<string, string>; activeDomains?: string[]; mode?: AcceleratorProxyMode; pacUrl?: string | null }>
   acceleratorSetDomains: (domains: unknown[]) => Promise<{ success: boolean }>
   acceleratorGetDomains: () => Promise<unknown[]>
   acceleratorResolve: (domain: string) => Promise<string | null>
   acceleratorResolveAll: (domains: unknown[]) => Promise<Record<string, string>>
-  acceleratorStart: (enabledDomains: unknown[]) => Promise<{ success: boolean; error?: string; warning?: string; hostsMap?: Record<string, string>; skippedDomains?: string[] }>
-  acceleratorStop: () => Promise<{ success: boolean; error?: string }>
+  acceleratorStart: (enabledDomains: unknown[]) => Promise<{ success: boolean; error?: string; warning?: string; hostsMap?: Record<string, string>; mode?: AcceleratorProxyMode; pacUrl?: string }>
+  acceleratorStop: () => Promise<{ success: boolean; error?: string; warning?: string }>
   acceleratorRepair: () => Promise<{ success: boolean; error?: string; warning?: string }>
   acceleratorCheckHosts: () => Promise<boolean>
   acceleratorPing: (ip: string) => Promise<number | null>

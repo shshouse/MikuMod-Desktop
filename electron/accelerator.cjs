@@ -26,6 +26,9 @@ const CA_CERT_FILE = 'mikumod_ca.pem'
 const CA_KEY_FILE = 'mikumod_ca_key.pem'
 const CA_COMMON_NAME = 'MikuMod Accelerator CA'
 const PROXY_PORT = 443
+const SYSTEM_PROXY_PORT = 17890
+const SYSTEM_PROXY_MITM_PORT = 17891
+const PAC_PATH = '/mikumod-accelerator.pac'
 const HEALTH_CHECK_PATH = '/__mikumod_accelerator_health'
 const UPSTREAM_TIMEOUT_MS = 10000
 const DOH_PROVIDER_TIMEOUT_MS = 2000
@@ -35,6 +38,8 @@ const CERT_PREWARM_DOMAIN_COUNT = 0
 const SYSTEM_COMMAND_TIMEOUT_MS = 15000
 const GIT_COMMAND_TIMEOUT_MS = 5000
 const DNS_FLUSH_TIMEOUT_MS = 3000
+const SYSTEM_PROXY_SNAPSHOT_FILE = 'accelerator_system_proxy_snapshot.json'
+const GIT_PROXY_SNAPSHOT_FILE = 'accelerator_git_proxy_snapshot.json'
 const HOSTS_SELF_HEAL_DEBOUNCE_MS = 800
 const HOSTS_SELF_HEAL_IGNORE_MS = 1500
 const HOSTS_WATCHER_RETRY_MS = 1000
@@ -99,6 +104,19 @@ const GITHUB_WEB_DEPENDENCY_DOMAINS = [
   'github-production-repository-image-32fea6.s3.amazonaws.com',
   'github-production-release-asset-2e65be.s3.amazonaws.com',
 ]
+const GIT_PROXY_DOMAINS = new Set([
+  'github.com',
+  'api.github.com',
+  'raw.githubusercontent.com',
+  'objects.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'github-registry-files.githubusercontent.com',
+  'pkg-containers.githubusercontent.com',
+  'gist.github.com',
+  'gist.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-production-release-asset-2e65be.s3.amazonaws.com',
+])
 
 function getWorkerRelayConfig() {
   loadEnvFiles({ app, keys: ['WORKER_RELAY_URL', 'WORKER_RELAY_SECRET'], override: true })
@@ -116,17 +134,6 @@ function needsWorkerRelay(domain) {
   return false
 }
 
-function findDomainsRequiringWorkerRelay(domains) {
-  return domains
-    .map(d => normalizeDomain(d.match_domain))
-    .filter(Boolean)
-    .filter(domain => needsWorkerRelay(domain))
-}
-
-function getWorkerRelaySkippedMessage(relayDomains) {
-  return `已跳过需要 Worker Relay 的域名：${relayDomains.slice(0, 3).join('、')}${relayDomains.length > 3 ? ' 等' : ''}`
-}
-
 let acceleratorState = {
   running: false,
   domains: [],
@@ -134,6 +141,8 @@ let acceleratorState = {
   resolved: {},
   resolvedCandidates: {},
   proxyServer: null,
+  systemProxyServer: null,
+  systemProxyMitmServer: null,
   proxyShutdownTimer: null,
   keepAliveAgent: null, // 长连接复用 Agent
   hostsWatcher: null,
@@ -145,6 +154,7 @@ let acceleratorState = {
   caFingerprint: '',
   caKey: null,
   caCert: null,
+  proxyMode: null,
 }
 
 // ============================================================
@@ -245,9 +255,183 @@ async function writeGitConfig(args) {
   await runProcess('git', ['config', ...args], GIT_COMMAND_TIMEOUT_MS)
 }
 
+async function isGitAvailable() {
+  try {
+    await runProcess('git', ['--version'], GIT_COMMAND_TIMEOUT_MS)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function getUserDataFilePath(fileName) {
+  return path.join(app.getPath('userData'), fileName)
+}
+
+function readJsonSnapshot(fileName) {
+  try { return JSON.parse(fs.readFileSync(getUserDataFilePath(fileName), 'utf-8')) } catch { return null }
+}
+
+function writeJsonSnapshot(fileName, data) {
+  fs.writeFileSync(getUserDataFilePath(fileName), JSON.stringify(data, null, 2), 'utf-8')
+}
+
+function removeJsonSnapshot(fileName) {
+  try { fs.unlinkSync(getUserDataFilePath(fileName)) } catch {}
+}
+
+function getSystemProxyPacUrl() {
+  return `http://127.0.0.1:${SYSTEM_PROXY_PORT}${PAC_PATH}`
+}
+
+function systemProxyNotifyScript() {
+  return `
+$source = @"
+using System;
+using System.Runtime.InteropServices;
+public static class MikuModInternetSettings {
+  [DllImport("wininet.dll", SetLastError = true)]
+  public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+}
+"@
+if (-not ("MikuModInternetSettings" -as [type])) { Add-Type -TypeDefinition $source }
+[MikuModInternetSettings]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
+[MikuModInternetSettings]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null
+`
+}
+
+async function readSystemProxySettings() {
+  if (process.platform !== 'win32') return { ProxyEnable: null, ProxyServer: null, AutoConfigURL: null }
+  const script = `
+$path = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+$props = Get-ItemProperty -Path $path
+[pscustomobject]@{
+  ProxyEnable = if ($null -ne $props.ProxyEnable) { [int]$props.ProxyEnable } else { $null }
+  ProxyServer = if ($null -ne $props.ProxyServer) { [string]$props.ProxyServer } else { $null }
+  AutoConfigURL = if ($null -ne $props.AutoConfigURL) { [string]$props.AutoConfigURL } else { $null }
+} | ConvertTo-Json -Compress
+`
+  const output = (await runPowerShell(script)).trim()
+  return JSON.parse(output)
+}
+
+async function writeSystemProxySettings(settings) {
+  if (process.platform !== 'win32') return
+  const proxyEnable = settings.ProxyEnable === null || settings.ProxyEnable === undefined
+    ? null
+    : Number(settings.ProxyEnable) ? 1 : 0
+  const proxyServer = settings.ProxyServer ? escapePowerShellSingleQuotedString(settings.ProxyServer) : null
+  const autoConfigUrl = settings.AutoConfigURL ? escapePowerShellSingleQuotedString(settings.AutoConfigURL) : null
+  const script = `
+$path = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+${proxyEnable === null
+    ? "Remove-ItemProperty -Path $path -Name ProxyEnable -ErrorAction SilentlyContinue"
+    : `New-ItemProperty -Path $path -Name ProxyEnable -Value ${proxyEnable} -PropertyType DWord -Force | Out-Null`}
+${proxyServer === null
+    ? "Remove-ItemProperty -Path $path -Name ProxyServer -ErrorAction SilentlyContinue"
+    : `New-ItemProperty -Path $path -Name ProxyServer -Value '${proxyServer}' -PropertyType String -Force | Out-Null`}
+${autoConfigUrl === null
+    ? "Remove-ItemProperty -Path $path -Name AutoConfigURL -ErrorAction SilentlyContinue"
+    : `New-ItemProperty -Path $path -Name AutoConfigURL -Value '${autoConfigUrl}' -PropertyType String -Force | Out-Null`}
+${systemProxyNotifyScript()}
+`
+  await runPowerShell(script)
+}
+
+async function applySystemProxyPac() {
+  const snapshot = readJsonSnapshot(SYSTEM_PROXY_SNAPSHOT_FILE)
+  const current = await readSystemProxySettings()
+  if (!snapshot) writeJsonSnapshot(SYSTEM_PROXY_SNAPSHOT_FILE, current)
+  await writeSystemProxySettings({
+    ProxyEnable: 0,
+    ProxyServer: current.ProxyServer || null,
+    AutoConfigURL: getSystemProxyPacUrl(),
+  })
+}
+
+async function restoreSystemProxySettings() {
+  const snapshot = readJsonSnapshot(SYSTEM_PROXY_SNAPSHOT_FILE)
+  if (snapshot) {
+    await writeSystemProxySettings(snapshot)
+    removeJsonSnapshot(SYSTEM_PROXY_SNAPSHOT_FILE)
+    return { changed: true }
+  }
+  try {
+    const current = await readSystemProxySettings()
+    if (current.AutoConfigURL === getSystemProxyPacUrl()) {
+      await writeSystemProxySettings({ ...current, AutoConfigURL: null })
+      return { changed: true }
+    }
+  } catch {}
+  return { changed: false }
+}
+
+async function hasSystemProxyResidual() {
+  if (readJsonSnapshot(SYSTEM_PROXY_SNAPSHOT_FILE)) return true
+  try {
+    const current = await readSystemProxySettings()
+    return current.AutoConfigURL === getSystemProxyPacUrl()
+  } catch {
+    return false
+  }
+}
+
+function getGitProxyDomains(domainList) {
+  const selected = new Set(domainList.map(normalizeDomain).filter(Boolean))
+  if (selected.has('github.com')) {
+    selected.add('api.github.com')
+    selected.add('raw.githubusercontent.com')
+    selected.add('objects.githubusercontent.com')
+    selected.add('github-releases.githubusercontent.com')
+    selected.add('release-assets.githubusercontent.com')
+  }
+  return [...selected].filter(domain => GIT_PROXY_DOMAINS.has(domain))
+}
+
+function getGitProxyConfigKey(domain) {
+  return `http.https://${domain}.proxy`
+}
+
+async function applyGitProxyConfig(domainList) {
+  const domains = getGitProxyDomains(domainList)
+  if (domains.length === 0) return { changed: false }
+  if (!await isGitAvailable()) return { changed: false, warning: '未检测到 Git，已跳过 GitHub Git 代理配置' }
+  const snapshot = readJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE)
+  if (!snapshot) {
+    const original = {}
+    for (const domain of domains) {
+      original[domain] = await readGitConfig(['--global', '--get', getGitProxyConfigKey(domain)]) || null
+    }
+    writeJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE, original)
+  }
+  try {
+    for (const domain of domains) {
+      await writeGitConfig(['--global', getGitProxyConfigKey(domain), `http://127.0.0.1:${SYSTEM_PROXY_PORT}`])
+    }
+    return { changed: true }
+  } catch (e) {
+    return { changed: false, warning: `GitHub Git 代理配置失败：${e.message}` }
+  }
+}
+
+async function restoreGitProxyConfig() {
+  const snapshot = readJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE)
+  if (!snapshot) return { changed: false }
+  if (!await isGitAvailable()) return { changed: false, warning: '未检测到 Git，无法恢复 Git 代理配置' }
+  for (const [domain, value] of Object.entries(snapshot)) {
+    const key = getGitProxyConfigKey(domain)
+    if (value) await writeGitConfig(['--global', key, value])
+    else {
+      try { await writeGitConfig(['--global', '--unset-all', key]) } catch {}
+    }
+  }
+  removeJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE)
+  return { changed: true }
+}
+
 async function repairGitSchannelConfig() {
   if (process.platform !== 'win32') return { changed: false }
-  if (!await readGitConfig(['--version'])) return { changed: false }
+  if (!await isGitAvailable()) return { changed: false }
 
   const effectiveBackend = (await readGitConfig(['--get', 'http.sslBackend'])).toLowerCase()
   const globalCAInfo = await readGitConfig(['--global', '--get', 'http.sslCAInfo'])
@@ -745,6 +929,37 @@ async function stopProxyServer() {
   }
 }
 
+function closeServer(server, timeoutMs = 1500) {
+  if (!server) return Promise.resolve()
+  return new Promise((resolve) => {
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      resolve()
+    }
+    try {
+      server.close(done)
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections()
+    } catch {
+      done()
+    }
+    setTimeout(done, timeoutMs)
+  })
+}
+
+async function stopSystemProxyServers() {
+  const proxyServer = acceleratorState.systemProxyServer
+  const mitmServer = acceleratorState.systemProxyMitmServer
+  acceleratorState.systemProxyServer = null
+  acceleratorState.systemProxyMitmServer = null
+  await Promise.all([closeServer(proxyServer), closeServer(mitmServer)])
+  if (!acceleratorState.proxyServer && acceleratorState.keepAliveAgent) {
+    acceleratorState.keepAliveAgent.destroy()
+    acceleratorState.keepAliveAgent = null
+  }
+}
+
 function clearProxyShutdownTimer() {
   if (acceleratorState.proxyShutdownTimer) {
     clearTimeout(acceleratorState.proxyShutdownTimer)
@@ -767,6 +982,7 @@ function resetRuntimeState(options = {}) {
   acceleratorState.running = false
   acceleratorState.activeDomains = []
   acceleratorState.hostsSelfHealPaused = false
+  acceleratorState.proxyMode = null
   if (!preserveResolved) {
     acceleratorState.resolved = {}
     acceleratorState.resolvedCandidates = {}
@@ -812,11 +1028,11 @@ function verifyDomainCertWithCA(peerCert, domain, caCert) {
   }
 }
 
-function waitForLocalProxyHealth(domain, caCert) {
+function waitForLocalProxyHealth(domain, caCert, port = PROXY_PORT) {
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: '127.0.0.1',
-      port: PROXY_PORT,
+      port,
       path: HEALTH_CHECK_PATH,
       method: 'GET',
       servername: domain,
@@ -861,16 +1077,38 @@ function waitForLocalProxyHealth(domain, caCert) {
  * 3. 强制 HTTP/1.1 避免 ALPN 协商不一致
  */
 
+function isAcceleratedDomain(domain) {
+  const safeDomain = normalizeDomain(domain)
+  if (!safeDomain) return false
+  const domains = acceleratorState.activeDomains.length > 0
+    ? acceleratorState.activeDomains
+    : Object.keys(acceleratorState.resolved)
+  return domains.some(item => safeDomain === item || safeDomain.endsWith(`.${item}`))
+}
+
+async function resolveAcceleratedDomainIP(domain) {
+  const safeDomain = normalizeDomain(domain)
+  if (!safeDomain || !isAcceleratedDomain(safeDomain)) return null
+  if (acceleratorState.resolved[safeDomain]) return acceleratorState.resolved[safeDomain]
+  const candidates = await resolveCandidatesViaDoh(safeDomain)
+  if (candidates.length === 0) return null
+  acceleratorState.resolved[safeDomain] = candidates[0]
+  acceleratorState.resolvedCandidates[safeDomain] = candidates
+  return candidates[0]
+}
+
 function createProxyServer() {
   const defaultCert = generateDomainCert('localhost')
 
   // 开启 Keep-Alive 连接池，大幅提升并发加载速度（如多图网页）
-  acceleratorState.keepAliveAgent = new https.Agent({
-    keepAlive: true,
-    keepAliveMsecs: 30000,
-    maxSockets: 32,         // Worker 并发连接数
-    maxFreeSockets: 8,
-  })
+  if (!acceleratorState.keepAliveAgent) {
+    acceleratorState.keepAliveAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 32,         // Worker 并发连接数
+      maxFreeSockets: 8,
+    })
+  }
 
   // 使用 https.createServer 同时做 TLS 终止 + HTTP 解析
   const server = https.createServer({
@@ -885,7 +1123,7 @@ function createProxyServer() {
     minVersion: 'TLSv1.2',
     // 强制 HTTP/1.1，避免 HTTP/2 ALPN 问题
     ALPNProtocols: ['http/1.1'],
-  }, (req, res) => {
+  }, async (req, res) => {
     // 此处已经拿到解析好的 HTTP 请求
     const domain = normalizeDomain(req.headers.host?.split(':')[0]) || normalizeDomain(req.socket.servername) || 'unknown'
 
@@ -895,7 +1133,7 @@ function createProxyServer() {
       return
     }
 
-    const realIP = acceleratorState.resolved[domain]
+    const realIP = await resolveAcceleratedDomainIP(domain)
 
     if (!realIP) {
       console.log(`[Accelerator] No resolved IP for ${domain}, rejecting`)
@@ -914,41 +1152,43 @@ function createProxyServer() {
   // 处理 WebSocket
   server.on('upgrade', (req, clientSocket, head) => {
     const domain = normalizeDomain(req.headers.host?.split(':')[0]) || 'unknown'
-    const realIP = acceleratorState.resolved[domain]
-
-    if (!realIP) {
-      clientSocket.destroy()
-      return
-    }
-
-    // 建立到上游的 TLS 隧道（WebSocket 透明转发）
-    const upstreamSocket = tls.connect({
-      host: realIP,
-      port: 443,
-      servername: '', // 同样不发 SNI
-      rejectUnauthorized: false,
-    }, () => {
-      // 构建原始请求握手头转给服务端
-      let requestHeader = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`
-      for(let i=0; i<req.rawHeaders.length; i+=2){
-        requestHeader += `${req.rawHeaders[i]}: ${req.rawHeaders[i+1]}\r\n`
+    resolveAcceleratedDomainIP(domain).then((realIP) => {
+      if (!realIP) {
+        clientSocket.destroy()
+        return
       }
-      requestHeader += '\r\n'
-      
-      upstreamSocket.write(requestHeader)
-      if (head && head.length) upstreamSocket.write(head)
-      
-      // 双向管道接通
-      clientSocket.pipe(upstreamSocket)
-      upstreamSocket.pipe(clientSocket)
-    })
 
-    upstreamSocket.on('error', () => {
+      // 建立到上游的 TLS 隧道（WebSocket 透明转发）
+      const upstreamSocket = tls.connect({
+        host: realIP,
+        port: 443,
+        servername: '', // 同样不发 SNI
+        rejectUnauthorized: false,
+      }, () => {
+        // 构建原始请求握手头转给服务端
+        let requestHeader = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`
+        for(let i=0; i<req.rawHeaders.length; i+=2){
+          requestHeader += `${req.rawHeaders[i]}: ${req.rawHeaders[i+1]}\r\n`
+        }
+        requestHeader += '\r\n'
+
+        upstreamSocket.write(requestHeader)
+        if (head && head.length) upstreamSocket.write(head)
+
+        // 双向管道接通
+        clientSocket.pipe(upstreamSocket)
+        upstreamSocket.pipe(clientSocket)
+      })
+
+      upstreamSocket.on('error', () => {
+        clientSocket.destroy()
+        upstreamSocket.destroy()
+      })
+      clientSocket.on('error', () => {
+        upstreamSocket.destroy()
+      })
+    }).catch(() => {
       clientSocket.destroy()
-      upstreamSocket.destroy()
-    })
-    clientSocket.on('error', () => {
-      upstreamSocket.destroy()
     })
   })
 
@@ -992,6 +1232,155 @@ async function ensureProxyServerReady(caCert) {
   await waitForLocalProxyHealth('localhost', caCert)
 }
 
+function createPacContent(domainList) {
+  const domains = [...new Set(domainList.map(normalizeDomain).filter(Boolean))]
+  const body = JSON.stringify(domains)
+  return `function FindProxyForURL(url, host) {
+  var domains = ${body};
+  host = String(host || '').toLowerCase();
+  for (var i = 0; i < domains.length; i++) {
+    var domain = domains[i];
+    if (host === domain || dnsDomainIs(host, '.' + domain)) {
+      return 'PROXY 127.0.0.1:${SYSTEM_PROXY_PORT}; DIRECT';
+    }
+  }
+  return 'DIRECT';
+}
+`
+}
+
+function createPacResponse(domainList) {
+  return Buffer.from(createPacContent(domainList), 'utf-8')
+}
+
+function parseConnectTarget(url) {
+  const [host, rawPort] = String(url || '').split(':')
+  return {
+    host: normalizeDomain(host),
+    port: Number(rawPort || 443),
+  }
+}
+
+function createSystemProxyMitmServer() {
+  return createProxyServer()
+}
+
+function createSystemProxyServer() {
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === PAC_PATH) {
+      const pac = createPacResponse(acceleratorState.activeDomains)
+      res.writeHead(200, {
+        'content-type': 'application/x-ns-proxy-autoconfig; charset=utf-8',
+        'content-length': pac.length,
+        'cache-control': 'no-store',
+      })
+      res.end(pac)
+      return
+    }
+
+    let target
+    try {
+      target = new URL(req.url)
+    } catch {
+      res.writeHead(400)
+      res.end('Bad Request')
+      return
+    }
+
+    const domain = normalizeDomain(target.hostname)
+    if (!domain || !isAcceleratedDomain(domain)) {
+      res.writeHead(403)
+      res.end('Forbidden')
+      return
+    }
+
+    req.url = target.pathname + target.search
+    req.headers.host = domain
+    resolveAcceleratedDomainIP(domain).then((realIP) => {
+      if (!realIP) {
+        res.writeHead(502)
+        res.end('Bad Gateway: domain not configured')
+        return
+      }
+      forwardRequest(req, res, domain, realIP)
+    }).catch((err) => {
+      res.writeHead(502)
+      res.end(`Bad Gateway: ${err.message}`)
+    })
+  })
+
+  server.on('connect', (req, clientSocket) => {
+    const target = parseConnectTarget(req.url)
+    if (!target.host || target.port !== 443 || !isAcceleratedDomain(target.host)) {
+      clientSocket.write('HTTP/1.1 403 Forbidden\r\n\r\n')
+      clientSocket.destroy()
+      return
+    }
+
+    const upstreamSocket = net.connect(SYSTEM_PROXY_MITM_PORT, '127.0.0.1', () => {
+      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      clientSocket.pipe(upstreamSocket)
+      upstreamSocket.pipe(clientSocket)
+    })
+
+    const closeBoth = () => {
+      clientSocket.destroy()
+      upstreamSocket.destroy()
+    }
+    upstreamSocket.on('error', closeBoth)
+    clientSocket.on('error', closeBoth)
+  })
+
+  server.on('error', (err) => {
+    console.error('[Accelerator] System proxy server error:', err.message)
+  })
+
+  return server
+}
+
+function listenServer(server, port, name) {
+  return new Promise((resolve, reject) => {
+    const onError = (err) => {
+      if (err.code === 'EADDRINUSE') {
+        reject(new Error(`端口 ${port} 已被占用，请关闭占用该端口的程序`))
+      } else if (err.code === 'EACCES') {
+        reject(new Error(`没有权限监听本地端口 ${port}`))
+      } else reject(err)
+    }
+    server.once('error', onError)
+    server.listen(port, '127.0.0.1', () => {
+      server.off('error', onError)
+      console.log(`[Accelerator] ${name} on 127.0.0.1:${port}`)
+      resolve()
+    })
+  })
+}
+
+async function ensureSystemProxyServersReady(caCert) {
+  if (acceleratorState.systemProxyServer && acceleratorState.systemProxyMitmServer) {
+    try {
+      await waitForLocalProxyHealth('localhost', caCert, SYSTEM_PROXY_MITM_PORT)
+      return
+    } catch (err) {
+      console.warn(`[Accelerator] Existing system proxy health check failed, recreating: ${err.message}`)
+      await stopSystemProxyServers()
+    }
+  }
+
+  const mitmServer = createSystemProxyMitmServer()
+  const proxyServer = createSystemProxyServer()
+  acceleratorState.systemProxyMitmServer = mitmServer
+  acceleratorState.systemProxyServer = proxyServer
+  try {
+    await listenServer(mitmServer, SYSTEM_PROXY_MITM_PORT, 'System proxy MITM')
+    await waitForLocalProxyHealth('localhost', caCert, SYSTEM_PROXY_MITM_PORT)
+    await listenServer(proxyServer, SYSTEM_PROXY_PORT, 'PAC/HTTP proxy')
+  } catch (err) {
+    await stopSystemProxyServers()
+    throw err
+  }
+}
+
 /**
  * HTTP 级别请求转发
  * 不发 SNI 绕过 GFW，用 Host header 让目标服务器正确路由
@@ -1031,11 +1420,7 @@ function createUpstreamOptions(clientReq, domain, ip, servername) {
 }
 
 function forwardRequest(clientReq, clientRes, domain, realIP) {
-  // 判断是否需要走 Worker 中转
-  if (needsWorkerRelay(domain)) {
-    return forwardViaWorker(clientReq, clientRes, domain)
-  }
-
+  // 所有域名先走直连（空 SNI 绕过 GFW），Worker 降为最终 fallback
   const options = createUpstreamOptions(clientReq, domain, realIP, '')
   const proxyReq = https.request(options, (proxyRes) => {
     acceleratorState.resolved[domain] = realIP
@@ -1151,6 +1536,11 @@ function forwardViaWorker(clientReq, clientRes, domain) {
 function retryWithSNI(clientReq, clientRes, domain, realIP, lastError) {
   if (clientRes.headersSent) return
   if (!isRetryableRequestMethod(clientReq.method)) {
+    // 非幂等请求不做 SNI 重试，直接尝试 Worker fallback
+    if (needsWorkerRelay(domain)) {
+      console.warn(`[Accelerator] Non-retryable ${clientReq.method} for ${domain}, falling back to Worker relay`)
+      return forwardViaWorker(clientReq, clientRes, domain)
+    }
     clientRes.writeHead(502)
     clientRes.end(`Bad Gateway: ${lastError?.message || 'upstream connection failed'}`)
     return
@@ -1167,6 +1557,11 @@ function retryWithSNI(clientReq, clientRes, domain, realIP, lastError) {
     if (clientRes.headersSent) return
     const attempt = attempts[index]
     if (!attempt) {
+      // 所有直连尝试失败，尝试 Worker Relay 作为最终 fallback
+      if (needsWorkerRelay(domain)) {
+        console.warn(`[Accelerator] All direct attempts failed for ${domain}, falling back to Worker relay`)
+        return forwardViaWorker(clientReq, clientRes, domain)
+      }
       clientRes.writeHead(502)
       clientRes.end(`Bad Gateway: ${previousError?.message || 'all upstream candidates failed'}`)
       return
@@ -1242,6 +1637,9 @@ function registerAcceleratorIPC() {
   ipcMain.handle('accelerator-status', () => ({
     running: acceleratorState.running,
     resolved: acceleratorState.resolved,
+    activeDomains: acceleratorState.activeDomains,
+    mode: acceleratorState.proxyMode,
+    pacUrl: acceleratorState.proxyMode === 'system' ? getSystemProxyPacUrl() : null,
   }))
 
   ipcMain.handle('accelerator-set-domains', (_e, domains) => {
@@ -1317,23 +1715,10 @@ function registerAcceleratorIPC() {
       const preCleanResult = removeHosts()
       if (!preCleanResult.success) return { success: false, error: `清理残留 hosts 失败：${preCleanResult.error}` }
 
-      const relayConfig = getWorkerRelayConfig()
-      const relayDomains = findDomainsRequiringWorkerRelay(safeDomains)
-      const skipRelayDomains = relayDomains.length > 0 && (!relayConfig.url || !relayConfig.secret)
-      const startupDomains = skipRelayDomains
-        ? safeDomains.filter(d => !needsWorkerRelay(d.match_domain))
-        : safeDomains
-      const warning = skipRelayDomains ? getWorkerRelaySkippedMessage(relayDomains) : ''
-      const gitRepair = startupDomains.some(d => needsWorkerRelay(d.match_domain))
+      const hasGitHub = safeDomains.some(d => d.match_domain === 'github.com')
+      const gitRepair = hasGitHub
         ? await repairGitSchannelConfig()
         : { changed: false }
-      if (startupDomains.length === 0) {
-        return {
-          success: false,
-          warning: joinMessages(warning, gitRepair.warning),
-          skippedDomains: relayDomains,
-        }
-      }
 
       // 1. CA 证书
       const ca = loadOrCreateCA()
@@ -1356,7 +1741,7 @@ function registerAcceleratorIPC() {
       }
 
       // 3. DoH 解析
-      const toResolve = startupDomains.filter(d => !d.forward_ip)
+      const toResolve = safeDomains.filter(d => !d.forward_ip)
       const results = {}
       const candidateResults = {}
       await Promise.all(toResolve.map(async (d) => {
@@ -1378,14 +1763,14 @@ function registerAcceleratorIPC() {
           candidateResults[d.match_domain] = candidates
         }
       }))
-      startupDomains.forEach(d => {
+      safeDomains.forEach(d => {
         if (d.forward_ip) {
           results[d.match_domain] = d.forward_ip
           candidateResults[d.match_domain] = [d.forward_ip]
         }
       })
 
-      const domainList = startupDomains
+      const domainList = safeDomains
         .filter(d => results[d.match_domain])
         .map(d => d.match_domain)
 
@@ -1396,28 +1781,50 @@ function registerAcceleratorIPC() {
 
       acceleratorState.resolved = results
       acceleratorState.resolvedCandidates = candidateResults
+      acceleratorState.activeDomains = domainList
 
-      // 4. 启动本地反向代理
-      await ensureProxyServerReady(ca.forgeCert)
-
-      // 5. hosts 指向 127.0.0.1
-      const hostsResult = applyHostsProxy(domainList)
-      if (!hostsResult.success) {
-        await stopProxyServer()
-        resetRuntimeState()
-        await uninstallCATrust()
-        return hostsResult
+      let proxyMode = 'system'
+      let proxyWarning = ''
+      let gitProxyResult = { changed: false }
+      try {
+        await ensureSystemProxyServersReady(ca.forgeCert)
+        await applySystemProxyPac()
+        gitProxyResult = await applyGitProxyConfig(domainList)
+      } catch (err) {
+        await restoreSystemProxySettings().catch(() => {})
+        await restoreGitProxyConfig().catch(() => {})
+        await stopSystemProxyServers()
+        proxyMode = 'hosts'
+        proxyWarning = `系统 PAC 代理启动失败，已回退 hosts 模式：${err.message}`
+        await ensureProxyServerReady(ca.forgeCert)
+        const hostsResult = applyHostsProxy(domainList)
+        if (!hostsResult.success) {
+          await stopProxyServer()
+          resetRuntimeState()
+          await uninstallCATrust()
+          return hostsResult
+        }
       }
 
       acceleratorState.running = true
-      startHostsSelfHeal(domainList)
+      acceleratorState.proxyMode = proxyMode
+      if (proxyMode === 'hosts') startHostsSelfHeal(domainList)
       warmupDomainCertificatesAsync(domainList)
 
       const hostsMap = {}
       domainList.forEach(d => { hostsMap[d] = acceleratorState.resolved[d] })
-      return { success: true, hostsMap, warning: joinMessages(warning, gitRepair.warning), skippedDomains: skipRelayDomains ? relayDomains : [] }
+      return {
+        success: true,
+        hostsMap,
+        mode: proxyMode,
+        pacUrl: proxyMode === 'system' ? getSystemProxyPacUrl() : undefined,
+        warning: joinMessages(gitRepair.warning, gitProxyResult.warning, proxyWarning),
+      }
     } catch (e) {
       removeHosts()
+      await restoreSystemProxySettings().catch(() => {})
+      await restoreGitProxyConfig().catch(() => {})
+      await stopSystemProxyServers()
       await stopProxyServer()
       resetRuntimeState()
       await uninstallCATrust()
@@ -1428,33 +1835,39 @@ function registerAcceleratorIPC() {
   // === 停止加速 ===
   ipcMain.handle('accelerator-stop', async () => {
     acceleratorState.hostsSelfHealPaused = true
+    const systemRestore = await restoreSystemProxySettings().catch(e => ({ changed: false, warning: `系统代理恢复失败：${e.message}` }))
+    const gitRestore = await restoreGitProxyConfig().catch(e => ({ changed: false, warning: `Git 代理恢复失败：${e.message}` }))
     const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
       return result
     }
     stopHostsSelfHeal()
+    await stopSystemProxyServers()
     resetRuntimeState({ preserveResolved: true })
     scheduleProxyWarmShutdown()
-    return result
+    return { ...result, warning: joinMessages(systemRestore.warning, gitRestore.warning) }
   })
 
   ipcMain.handle('accelerator-repair', async () => {
     acceleratorState.hostsSelfHealPaused = true
     const gitRepair = await repairGitSchannelConfig()
+    const systemRestore = await restoreSystemProxySettings().catch(e => ({ changed: false, warning: `系统代理恢复失败：${e.message}` }))
+    const gitRestore = await restoreGitProxyConfig().catch(e => ({ changed: false, warning: `Git 代理恢复失败：${e.message}` }))
     const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
       return result
     }
     stopHostsSelfHeal()
+    await stopSystemProxyServers()
     await stopProxyServer()
     resetRuntimeState()
     await uninstallCATrust()
-    return { ...result, warning: gitRepair.warning }
+    return { ...result, warning: joinMessages(gitRepair.warning, systemRestore.warning, gitRestore.warning) }
   })
 
-  ipcMain.handle('accelerator-check-hosts', () => containsMikuModEntries(readHostsFile()))
+  ipcMain.handle('accelerator-check-hosts', async () => containsMikuModEntries(readHostsFile()) || await hasSystemProxyResidual())
 
   ipcMain.handle('accelerator-ping', async (_e, ip) => await tcpPing(ip))
 
@@ -1465,21 +1878,17 @@ function registerAcceleratorIPC() {
   })
 }
 
-function cleanupOnExit() {
+async function cleanupOnExit() {
   stopHostsSelfHeal()
   clearProxyShutdownTimer()
   acceleratorState.running = false
   try {
     removeHosts()
   } catch {}
-  if (acceleratorState.proxyServer) {
-    try { acceleratorState.proxyServer.close() } catch {}
-    acceleratorState.proxyServer = null
-  }
-  if (acceleratorState.keepAliveAgent) {
-    acceleratorState.keepAliveAgent.destroy()
-    acceleratorState.keepAliveAgent = null
-  }
+  await restoreSystemProxySettings().catch(() => {})
+  await restoreGitProxyConfig().catch(() => {})
+  await stopSystemProxyServers()
+  await stopProxyServer()
   resetRuntimeState()
 }
 

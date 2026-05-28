@@ -22,6 +22,8 @@ interface ResolvedMap {
   [domain: string]: string
 }
 
+type AcceleratorProxyMode = "system" | "hosts" | null
+
 const GROUP_LABELS: Record<string, string> = {
   steam: "Steam 服务",
   github: "GitHub",
@@ -210,6 +212,7 @@ export function AcceleratorPage() {
   const [latencies, setLatencies] = useState<Record<string, { before: number | null; after: number | null } | null>>({})
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [hasResidual, setHasResidual] = useState(false)
+  const [proxyMode, setProxyMode] = useState<AcceleratorProxyMode>(null)
 
   // 1. 初始化
   const fetchDomains = useCallback(async () => {
@@ -275,6 +278,7 @@ export function AcceleratorPage() {
         if (s) {
           setRunning(s.running)
           setResolved(s.resolved || {})
+          setProxyMode(s.mode || null)
         }
       } catch (err) {
         console.error("无法获取加速器状态:", err)
@@ -390,6 +394,7 @@ export function AcceleratorPage() {
       if (result?.success) {
         setRunning(true)
         setHasResidual(true)
+        setProxyMode(result.mode || null)
         if (result.hostsMap) setResolved(prev => ({ ...prev, ...result.hostsMap }))
         setNotice(result.warning || null)
       } else if (result?.warning) {
@@ -414,6 +419,8 @@ export function AcceleratorPage() {
         setRunning(false)
         setHasResidual(false)
         setResolved({})
+        setProxyMode(null)
+        setNotice(result.warning || null)
       } else {
         setError(result?.error || "停止失败")
       }
@@ -434,6 +441,7 @@ export function AcceleratorPage() {
         setRunning(false)
         setHasResidual(false)
         setResolved({})
+        setProxyMode(null)
         setNotice(result.warning || null)
       } else {
         setError(result?.error || "网络修复失败")
@@ -456,6 +464,7 @@ export function AcceleratorPage() {
   const currentGroupDomains = selectedGroup ? (groups[selectedGroup] || []) : []
   const rootItems = getRootItems(currentGroupDomains)
   const isCleanupMode = hasResidual && !running
+  const proxyModeLabel = proxyMode === "system" ? "系统 PAC 代理" : proxyMode === "hosts" ? "hosts 兜底模式" : null
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -482,6 +491,11 @@ export function AcceleratorPage() {
                   : "加速 Steam 和 GitHub 站点访问"
                 }
               </p>
+              {running && proxyModeLabel && (
+                <p className="mt-1 text-[10px] text-emerald-300">
+                  当前模式：{proxyModeLabel}
+                </p>
+              )}
             </div>
           </div>
 
