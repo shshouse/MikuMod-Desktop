@@ -52,7 +52,7 @@
   },
   "build": {
     "appId": "com.mikumod.desktop",
-    "productName": "MikuMod Desktop",
+    "productName": "MikuMod",
     "directories": {
       "output": "release"
     },
@@ -60,6 +60,12 @@
       "dist/**/*",
       "electron/**/*",
       "public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
     ],
     "win": {
       "target": [

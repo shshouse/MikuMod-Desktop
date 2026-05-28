@@ -15,7 +15,21 @@ const ALLOWED_HOSTS = new Set([
   'archiveprogram.github.com', 'raw.githubusercontent.com', 'avatars.githubusercontent.com',
   'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
   'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
-  'alive.github.com',
+  'alive.github.com', 'collector.github.com', 'favicons.githubusercontent.com',
+  'user-images.githubusercontent.com', 'private-user-images.githubusercontent.com',
+  'repository-images.githubusercontent.com', 'opengraph.githubassets.com',
+  'github-cloud.s3.amazonaws.com', 'github-releases.githubusercontent.com',
+  'github-registry-files.githubusercontent.com', 'pkg-containers.githubusercontent.com',
+  'central.github.com', 'pipelines.actions.githubusercontent.com', 'gist.githubusercontent.com',
+  'private-avatars.githubusercontent.com', 'secured-user-images.githubusercontent.com',
+  'objects-origin.githubusercontent.com', 'release-assets.githubusercontent.com',
+  'marketplace-screenshots.githubusercontent.com', 'identicons.github.com',
+  'insights.github.com', 'www.githubstatus.com',
+  'github-production-repository-file-5c1aeb.s3.amazonaws.com',
+  'github-production-upload-manifest-file-7fdce7.s3.amazonaws.com',
+  'github-production-user-asset-6210df.s3.amazonaws.com',
+  'github-production-repository-image-32fea6.s3.amazonaws.com',
+  'github-production-release-asset-2e65be.s3.amazonaws.com',
   'twitch.tv', 'www.twitch.tv', 'api.twitch.tv', 'ttvnw.net',
   'www.recaptcha.net', 'fonts.googleapis.com', 'fonts.gstatic.com',
 ]);
@@ -26,6 +40,15 @@ const CACHEABLE_HOSTS = new Set([
   'avatars.githubusercontent.com', // 头像
   'media.githubusercontent.com',
   'camo.githubusercontent.com',
+  'private-avatars.githubusercontent.com',
+  'secured-user-images.githubusercontent.com',
+  'objects-origin.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'marketplace-screenshots.githubusercontent.com',
+  'identicons.github.com',
+  'github-production-user-asset-6210df.s3.amazonaws.com',
+  'github-production-repository-image-32fea6.s3.amazonaws.com',
+  'github-production-release-asset-2e65be.s3.amazonaws.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
 ]);
@@ -130,7 +153,7 @@ export default {
       method: request.method,
       headers,
       body: request.body,
-      redirect: 'manual',
+      redirect: shouldCache ? 'follow' : 'manual',
     });
 
     // 构建响应

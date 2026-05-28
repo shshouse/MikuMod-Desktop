@@ -1,5 +1,5 @@
 export const APP_TEXT = {
-  appName: "MikuMod Desktop",
+  appName: "MikuMod",
   version: "v0.1.0",
   tabs: {
     mods: "模组库",

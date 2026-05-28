@@ -1,7 +1,7 @@
 const { app, ipcMain } = require('electron')
 const fs = require('fs')
 const path = require('path')
-const { execSync } = require('child_process')
+const { execFile } = require('child_process')
 const tls = require('tls')
 const net = require('net')
 const dns = require('dns').promises
@@ -31,43 +31,74 @@ const UPSTREAM_TIMEOUT_MS = 10000
 const DOH_PROVIDER_TIMEOUT_MS = 2000
 const DOH_EARLY_RETURN_GRACE_MS = 150
 const DOH_TOTAL_TIMEOUT_MS = 2200
-const CERT_PREWARM_DOMAIN_COUNT = 12
+const CERT_PREWARM_DOMAIN_COUNT = 0
+const SYSTEM_COMMAND_TIMEOUT_MS = 15000
+const GIT_COMMAND_TIMEOUT_MS = 5000
+const DNS_FLUSH_TIMEOUT_MS = 3000
 const HOSTS_SELF_HEAL_DEBOUNCE_MS = 800
 const HOSTS_SELF_HEAL_IGNORE_MS = 1500
 const HOSTS_WATCHER_RETRY_MS = 1000
 const PROXY_WARM_IDLE_MS = 15000
-const LEGACY_ACCELERATOR_HOSTS_DOMAINS = new Set([
+const STEAM_ACCELERATOR_DOMAINS = [
   'steamcdn-a.akamaihd.net', 'cdn.akamai.steamstatic.com', 'steamcommunity-a.akamaihd.net',
   'media.steampowered.com', 'steamcommunity.com', 'store.steampowered.com',
   'api.steampowered.com', 'login.steampowered.com', 'help.steampowered.com',
+]
+const GITHUB_RELAY_DOMAINS = [
   'github.com', 'github.dev', 'api.github.com', 'github.githubassets.com',
   'education.github.com', 'resources.github.com', 'uploads.github.com',
   'archiveprogram.github.com', 'raw.githubusercontent.com', 'avatars.githubusercontent.com',
   'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
   'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
-  'alive.github.com',
+  'alive.github.com', 'collector.github.com', 'favicons.githubusercontent.com',
+  'user-images.githubusercontent.com', 'private-user-images.githubusercontent.com',
+  'repository-images.githubusercontent.com', 'opengraph.githubassets.com',
+  'github-cloud.s3.amazonaws.com', 'github-releases.githubusercontent.com',
+  'github-registry-files.githubusercontent.com', 'pkg-containers.githubusercontent.com',
+  'central.github.com', 'pipelines.actions.githubusercontent.com', 'gist.githubusercontent.com',
+  'private-avatars.githubusercontent.com', 'secured-user-images.githubusercontent.com',
+  'objects-origin.githubusercontent.com', 'release-assets.githubusercontent.com',
+  'marketplace-screenshots.githubusercontent.com', 'identicons.github.com',
+  'insights.github.com', 'www.githubstatus.com',
+  'github-production-repository-file-5c1aeb.s3.amazonaws.com',
+  'github-production-upload-manifest-file-7fdce7.s3.amazonaws.com',
+  'github-production-user-asset-6210df.s3.amazonaws.com',
+  'github-production-repository-image-32fea6.s3.amazonaws.com',
+  'github-production-release-asset-2e65be.s3.amazonaws.com',
+]
+const LEGACY_ACCELERATOR_HOSTS_DOMAINS = new Set([
+  ...STEAM_ACCELERATOR_DOMAINS,
+  ...GITHUB_RELAY_DOMAINS,
   'twitch.tv', 'www.twitch.tv', 'api.twitch.tv', 'ttvnw.net',
   'www.recaptcha.net', 'fonts.googleapis.com', 'fonts.gstatic.com',
 ])
-const WORKER_RELAY_DOMAINS = new Set([
-  'github.com', 'github.dev', 'api.github.com', 'github.githubassets.com',
-  'education.github.com', 'resources.github.com', 'uploads.github.com',
-  'archiveprogram.github.com', 'raw.githubusercontent.com', 'avatars.githubusercontent.com',
-  'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
-  'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
-  'alive.github.com',
-])
+const WORKER_RELAY_DOMAINS = new Set(GITHUB_RELAY_DOMAINS)
 const SUPPORTED_ACCELERATOR_DOMAINS = new Set([
-  'steamcdn-a.akamaihd.net', 'cdn.akamai.steamstatic.com', 'steamcommunity-a.akamaihd.net',
-  'media.steampowered.com', 'steamcommunity.com', 'store.steampowered.com',
-  'api.steampowered.com', 'login.steampowered.com', 'help.steampowered.com',
-  'github.com', 'github.dev', 'api.github.com', 'github.githubassets.com',
-  'education.github.com', 'resources.github.com', 'uploads.github.com',
-  'archiveprogram.github.com', 'raw.githubusercontent.com', 'avatars.githubusercontent.com',
-  'objects.githubusercontent.com', 'desktop.githubusercontent.com', 'media.githubusercontent.com',
-  'camo.githubusercontent.com', 'github.io', 'gist.github.com', 'copilot.github.com',
-  'alive.github.com',
+  ...STEAM_ACCELERATOR_DOMAINS,
+  ...GITHUB_RELAY_DOMAINS,
 ])
+const GITHUB_WEB_DEPENDENCY_DOMAINS = [
+  'github.githubassets.com',
+  'avatars.githubusercontent.com',
+  'private-avatars.githubusercontent.com',
+  'favicons.githubusercontent.com',
+  'raw.githubusercontent.com',
+  'media.githubusercontent.com',
+  'camo.githubusercontent.com',
+  'user-images.githubusercontent.com',
+  'private-user-images.githubusercontent.com',
+  'secured-user-images.githubusercontent.com',
+  'repository-images.githubusercontent.com',
+  'opengraph.githubassets.com',
+  'objects.githubusercontent.com',
+  'objects-origin.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-cloud.s3.amazonaws.com',
+  'github-releases.githubusercontent.com',
+  'github-production-user-asset-6210df.s3.amazonaws.com',
+  'github-production-repository-image-32fea6.s3.amazonaws.com',
+  'github-production-release-asset-2e65be.s3.amazonaws.com',
+]
 
 function getWorkerRelayConfig() {
   loadEnvFiles({ app, keys: ['WORKER_RELAY_URL', 'WORKER_RELAY_SECRET'], override: true })
@@ -176,6 +207,106 @@ function normalizeHex(value) {
   return String(value || '').replace(/[^0-9a-fA-F]/g, '').toUpperCase()
 }
 
+function runProcess(file, args, timeoutMs = SYSTEM_COMMAND_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, {
+      windowsHide: true,
+      encoding: 'utf-8',
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        if (stderr && stderr.trim()) error.message = stderr.trim()
+        reject(error)
+        return
+      }
+      resolve(stdout || '')
+    })
+  })
+}
+
+function runPowerShell(script) {
+  return runProcess('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script])
+}
+
+function escapePowerShellSingleQuotedString(value) {
+  return String(value || '').replace(/'/g, "''")
+}
+
+async function readGitConfig(args) {
+  try {
+    return (await runProcess('git', ['config', ...args], GIT_COMMAND_TIMEOUT_MS)).trim()
+  } catch {
+    return ''
+  }
+}
+
+async function writeGitConfig(args) {
+  await runProcess('git', ['config', ...args], GIT_COMMAND_TIMEOUT_MS)
+}
+
+async function repairGitSchannelConfig() {
+  if (process.platform !== 'win32') return { changed: false }
+  if (!await readGitConfig(['--version'])) return { changed: false }
+
+  const effectiveBackend = (await readGitConfig(['--get', 'http.sslBackend'])).toLowerCase()
+  const globalCAInfo = await readGitConfig(['--global', '--get', 'http.sslCAInfo'])
+  const needsBackendFix = effectiveBackend !== 'schannel'
+  const needsCAInfoFix = Boolean(globalCAInfo)
+
+  if (!needsBackendFix && !needsCAInfoFix) {
+    const schannelUseSSLCAInfo = (await readGitConfig(['--global', '--get', 'http.schannelUseSSLCAInfo'])).toLowerCase()
+    const schannelCheckRevoke = (await readGitConfig(['--global', '--get', 'http.schannelCheckRevoke'])).toLowerCase()
+    if (schannelUseSSLCAInfo === 'false' && schannelCheckRevoke === 'false') return { changed: false }
+  }
+
+  try {
+    if (needsBackendFix) await writeGitConfig(['--global', 'http.sslBackend', 'schannel'])
+    if (needsCAInfoFix) {
+      try { await writeGitConfig(['--global', '--unset', 'http.sslCAInfo']) } catch {}
+    }
+    await writeGitConfig(['--global', 'http.schannelUseSSLCAInfo', 'false'])
+    await writeGitConfig(['--global', 'http.schannelCheckRevoke', 'false'])
+    return { changed: true, warning: '已修复 Git for Windows 证书配置，Git 将使用 Windows 系统信任存储' }
+  } catch (e) {
+    return { changed: false, warning: `Git 证书配置修复失败：${e.message}` }
+  }
+}
+
+function joinMessages(...messages) {
+  return messages.filter(Boolean).join('；')
+}
+
+async function removeMikuModRootCerts(keepFingerprint = '') {
+  const keep = normalizeHex(keepFingerprint)
+  const name = escapePowerShellSingleQuotedString(CA_COMMON_NAME)
+  const script = `
+$storePaths = @('Cert:\\LocalMachine\\Root', 'Cert:\\CurrentUser\\Root')
+$keep = '${keep}'
+$name = '${name}'
+$removed = 0
+$errors = 0
+foreach ($storePath in $storePaths) {
+  Get-ChildItem $storePath -ErrorAction SilentlyContinue |
+    Where-Object { $_.Subject -like "*$name*" } |
+    Where-Object { -not $keep -or (($_.Thumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant() -ne $keep) } |
+    ForEach-Object {
+      try {
+        Remove-Item -LiteralPath $_.PSPath -Force -ErrorAction Stop
+        $removed++
+      } catch {
+        $errors++
+      }
+    }
+}
+if ($errors -gt 0) { throw "Failed to remove $errors MikuMod CA certificate(s)" }
+Write-Output $removed
+`
+  const output = (await runPowerShell(script)).trim()
+  const lines = output.split(/\r?\n/).filter(Boolean)
+  return Number(lines[lines.length - 1] || 0) || 0
+}
+
 function isCAKeyPairValid(forgeCert, forgeKey) {
   try {
     const publicKey = forgeCert.publicKey
@@ -215,28 +346,24 @@ function loadOrCreateCA() {
   return ca
 }
 
-function isCATrusted(expectedFingerprint) {
+async function isCATrusted(expectedFingerprint) {
   try {
-    const output = execSync(
-      `certutil -store Root "${expectedFingerprint}"`,
-      { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    )
+    const output = await runProcess('certutil', ['-store', 'Root', expectedFingerprint])
     return output.includes(CA_COMMON_NAME) && normalizeHex(output).includes(normalizeHex(expectedFingerprint))
   } catch {}
   return false
 }
 
-function installCATrust(derPath, expectedFingerprint) {
-  if (isCATrusted(expectedFingerprint)) return true
-  uninstallCATrust()
+async function installCATrust(derPath, expectedFingerprint) {
   try {
-    // 直接用 certutil 安装（进程已是管理员权限，不需要提权）
-    execSync(`certutil -f -addstore Root "${derPath}"`, {
-      windowsHide: true,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    const trusted = isCATrusted(expectedFingerprint)
+    await removeMikuModRootCerts()
+  } catch (e) {
+    console.error('[Accelerator] stale CA cleanup failed:', e.message)
+    return false
+  }
+  try {
+    await runProcess('certutil', ['-f', '-addstore', 'Root', derPath])
+    const trusted = await isCATrusted(expectedFingerprint)
     if (trusted) console.log('[Accelerator] CA certificate installed successfully')
     return trusted
   } catch (e) {
@@ -246,28 +373,12 @@ function installCATrust(derPath, expectedFingerprint) {
 }
 
 /** 从系统信任存储移除 CA 证书 */
-function uninstallCATrust() {
+async function uninstallCATrust() {
   try {
-    // 先查证书序列号
-    const output = execSync(
-      `certutil -store Root "${CA_COMMON_NAME}"`,
-      { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    )
-    const certIds = new Set()
-    const serialMatches = output.matchAll(/(?:序列号|Serial Number)[:\s]+([0-9a-fA-F]+)/gi)
-    const hashMatches = output.matchAll(/Cert Hash\(sha1\)[:\s]+([0-9a-fA-F ]+)/gi)
-    for (const match of serialMatches) certIds.add(normalizeHex(match[1]))
-    if (certIds.size === 0) {
-      for (const match of hashMatches) certIds.add(normalizeHex(match[1]))
-    }
-    for (const certId of certIds) {
-      if (!certId) continue
-      execSync(`certutil -delstore Root "${certId}"`, {
-        windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      })
-    }
-    if (certIds.size > 0) console.log('[Accelerator] CA certificate removed from trust store')
-  } catch {
+    const removed = await removeMikuModRootCerts()
+    if (removed > 0) console.log('[Accelerator] CA certificate removed from trust store')
+  } catch (e) {
+    console.warn('[Accelerator] CA certificate cleanup failed:', e.message)
     // 没找到或删除失败，忽略
   }
 }
@@ -303,7 +414,6 @@ function generateDomainCert(domain) {
     { name: 'extKeyUsage', serverAuth: true },
     { name: 'subjectAltName', altNames },
     { name: 'subjectKeyIdentifier' },
-    { name: 'authorityKeyIdentifier', keyIdentifier: true },
   ])
   cert.sign(caKey, forge.md.sha256.create())
 
@@ -421,13 +531,9 @@ function isLegacyAcceleratorHostsLine(line) {
 }
 
 function writeHosts(newContent) {
-  // 进程已是管理员权限，直接写 hosts 文件
   acceleratorState.hostsIgnoreUntil = Date.now() + HOSTS_SELF_HEAL_IGNORE_MS
   fs.writeFileSync(HOSTS_PATH, newContent, 'utf-8')
-  // 刷新 DNS 缓存（直接调用 ipconfig，不走 PowerShell）
-  try {
-    execSync('ipconfig /flushdns', { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
-  } catch {}
+  runProcess('ipconfig', ['/flushdns'], DNS_FLUSH_TIMEOUT_MS).catch(() => {})
 }
 
 function applyHostsProxy(domainList) {
@@ -597,6 +703,14 @@ function normalizeEnabledDomains(domains) {
     if (!domain || !isSupportedAcceleratorDomain(domain) || seen.has(domain)) continue
     result.push({ ...item, match_domain: domain, forward_ip: normalizeIP(item.forward_ip) })
     seen.add(domain)
+  }
+  if (seen.has('github.com')) {
+    for (const domain of GITHUB_WEB_DEPENDENCY_DOMAINS) {
+      if (!seen.has(domain) && isSupportedAcceleratorDomain(domain)) {
+        result.push({ match_domain: domain, forward_ip: null })
+        seen.add(domain)
+      }
+    }
   }
   return result
 }
@@ -1003,6 +1117,9 @@ function forwardViaWorker(clientReq, clientRes, domain) {
     const resHeaders = { ...proxyRes.headers }
     delete resHeaders['access-control-allow-origin']
     delete resHeaders['x-cache'] // 调试用，生产环境不透传
+    if (proxyRes.statusCode >= 400) {
+      console.warn(`[Accelerator] Worker relay returned ${proxyRes.statusCode} for ${domain}${clientReq.url}`)
+    }
 
     clientRes.writeHead(proxyRes.statusCode, resHeaders)
     proxyRes.pipe(clientRes)
@@ -1207,10 +1324,13 @@ function registerAcceleratorIPC() {
         ? safeDomains.filter(d => !needsWorkerRelay(d.match_domain))
         : safeDomains
       const warning = skipRelayDomains ? getWorkerRelaySkippedMessage(relayDomains) : ''
+      const gitRepair = startupDomains.some(d => needsWorkerRelay(d.match_domain))
+        ? await repairGitSchannelConfig()
+        : { changed: false }
       if (startupDomains.length === 0) {
         return {
           success: false,
-          warning,
+          warning: joinMessages(warning, gitRepair.warning),
           skippedDomains: relayDomains,
         }
       }
@@ -1230,8 +1350,8 @@ function registerAcceleratorIPC() {
       const derPath = path.join(certDir, 'mikumod_ca.cer')
       fs.writeFileSync(derPath, certToDerBuffer(ca.forgeCert))
 
-      if (!installCATrust(derPath, fingerprint)) {
-        uninstallCATrust()
+      if (!await installCATrust(derPath, fingerprint)) {
+        await uninstallCATrust()
         return { success: false, error: 'CA 证书未被系统信任，请以管理员权限启动并允许安装根证书' }
       }
 
@@ -1270,7 +1390,7 @@ function registerAcceleratorIPC() {
         .map(d => d.match_domain)
 
       if (domainList.length === 0) {
-        uninstallCATrust()
+        await uninstallCATrust()
         return { success: false, error: '所选域名解析失败，未修改系统 hosts' }
       }
 
@@ -1285,7 +1405,7 @@ function registerAcceleratorIPC() {
       if (!hostsResult.success) {
         await stopProxyServer()
         resetRuntimeState()
-        uninstallCATrust()
+        await uninstallCATrust()
         return hostsResult
       }
 
@@ -1295,12 +1415,12 @@ function registerAcceleratorIPC() {
 
       const hostsMap = {}
       domainList.forEach(d => { hostsMap[d] = acceleratorState.resolved[d] })
-      return { success: true, hostsMap, warning, skippedDomains: skipRelayDomains ? relayDomains : [] }
+      return { success: true, hostsMap, warning: joinMessages(warning, gitRepair.warning), skippedDomains: skipRelayDomains ? relayDomains : [] }
     } catch (e) {
       removeHosts()
       await stopProxyServer()
       resetRuntimeState()
-      uninstallCATrust()
+      await uninstallCATrust()
       return { success: false, error: e.message }
     }
   })
@@ -1321,6 +1441,7 @@ function registerAcceleratorIPC() {
 
   ipcMain.handle('accelerator-repair', async () => {
     acceleratorState.hostsSelfHealPaused = true
+    const gitRepair = await repairGitSchannelConfig()
     const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
@@ -1329,8 +1450,8 @@ function registerAcceleratorIPC() {
     stopHostsSelfHeal()
     await stopProxyServer()
     resetRuntimeState()
-    uninstallCATrust()
-    return result
+    await uninstallCATrust()
+    return { ...result, warning: gitRepair.warning }
   })
 
   ipcMain.handle('accelerator-check-hosts', () => containsMikuModEntries(readHostsFile()))

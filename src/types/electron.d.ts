@@ -95,7 +95,7 @@ export interface ElectronAPI {
   acceleratorResolveAll: (domains: unknown[]) => Promise<Record<string, string>>
   acceleratorStart: (enabledDomains: unknown[]) => Promise<{ success: boolean; error?: string; warning?: string; hostsMap?: Record<string, string>; skippedDomains?: string[] }>
   acceleratorStop: () => Promise<{ success: boolean; error?: string }>
-  acceleratorRepair: () => Promise<{ success: boolean; error?: string }>
+  acceleratorRepair: () => Promise<{ success: boolean; error?: string; warning?: string }>
   acceleratorCheckHosts: () => Promise<boolean>
   acceleratorPing: (ip: string) => Promise<number | null>
   acceleratorPingBoth: (domain: string, ip: string) => Promise<{ before: number | null, after: number | null }>

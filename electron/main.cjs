@@ -73,6 +73,39 @@ const activeDownloads = new Map() // { id: DownloadItem }
 const pendingDownloadRequests = []
 let registeredDownloadSession = null
 
+function writeMainLog(message) {
+  const line = `[${new Date().toISOString()}] ${message}\n`
+  try {
+    fs.appendFileSync(path.join(desktopPaths.logsDir, 'main.log'), line)
+  } catch {}
+  console.log(message)
+}
+
+function attachWindowDiagnostics(targetWindow) {
+  targetWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    writeMainLog(`[Window] did-fail-load code=${errorCode} description=${errorDescription} url=${validatedURL} mainFrame=${isMainFrame}`)
+  })
+
+  targetWindow.webContents.on('did-fail-provisional-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    writeMainLog(`[Window] did-fail-provisional-load code=${errorCode} description=${errorDescription} url=${validatedURL} mainFrame=${isMainFrame}`)
+  })
+
+  targetWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    writeMainLog(`[Window] preload-error path=${preloadPath} error=${error?.stack || error?.message || error}`)
+  })
+
+  targetWindow.webContents.on('render-process-gone', (_event, details) => {
+    writeMainLog(`[Window] render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
+  })
+
+  targetWindow.webContents.on('console-message', (_event, levelOrDetails, message, line, sourceId) => {
+    const details = typeof levelOrDetails === 'object'
+      ? levelOrDetails
+      : { level: levelOrDetails, message, line, sourceId }
+    writeMainLog(`[Renderer] level=${details.level} ${details.sourceId || ''}:${details.line || 0} ${details.message || ''}`)
+  })
+}
+
 // === Security: path & URL validation ===
 const ALLOWED_EXTERNAL_DOMAINS = new Set([
   'mikumod.com', 'www.mikumod.com',
@@ -511,11 +544,19 @@ function createWindow() {
     show: false,
   })
 
+  attachWindowDiagnostics(mainWindow)
+
   // 开发模式加载 Vite dev server，生产加载打包文件
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch((err) => {
+      writeMainLog(`[Window] loadURL failed: ${err?.stack || err?.message || err}`)
+    })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    const indexPath = path.join(__dirname, '../dist/index.html')
+    writeMainLog(`[Window] loading ${indexPath}`)
+    mainWindow.loadFile(indexPath).catch((err) => {
+      writeMainLog(`[Window] loadFile failed: ${err?.stack || err?.message || err}`)
+    })
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -872,7 +913,12 @@ ipcMain.handle('scan-steam-games', async () => {
           const name = parseVdfValue(content, 'name')
           const installDir = parseVdfValue(content, 'installdir')
           if (appId && installDir) {
-            const installPath = path.join(steamapps, 'common', installDir)
+            let installPath = path.join(steamapps, 'common', installDir)
+            const PATH_FIXES = {
+              '12210': 'GTAIV',
+            }
+            const fix = PATH_FIXES[String(appId)]
+            if (fix) installPath = path.join(installPath, fix)
             authorizeBaseDir(installPath)
             results.push({
               appId,

@@ -39,7 +39,7 @@ const GROUP_ORDER = [
 
 const CHECKED_STORAGE_KEY = "mmd_accelerator_checked"
 const CHECKED_STORAGE_VERSION_KEY = "mmd_accelerator_checked_version"
-const CHECKED_STORAGE_VERSION = "2"
+const CHECKED_STORAGE_VERSION = "4"
 const DEFAULT_SAFE_ACCELERATOR_DOMAINS = new Set([
   "steamcdn-a.akamaihd.net",
   "cdn.akamai.steamstatic.com",
@@ -50,6 +50,50 @@ const DEFAULT_SAFE_ACCELERATOR_DOMAINS = new Set([
   "api.steampowered.com",
   "login.steampowered.com",
   "help.steampowered.com",
+  "github.com",
+  "github.dev",
+  "api.github.com",
+  "github.githubassets.com",
+  "education.github.com",
+  "resources.github.com",
+  "uploads.github.com",
+  "archiveprogram.github.com",
+  "raw.githubusercontent.com",
+  "avatars.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "desktop.githubusercontent.com",
+  "media.githubusercontent.com",
+  "camo.githubusercontent.com",
+  "github.io",
+  "gist.github.com",
+  "copilot.github.com",
+  "alive.github.com",
+  "collector.github.com",
+  "favicons.githubusercontent.com",
+  "user-images.githubusercontent.com",
+  "private-user-images.githubusercontent.com",
+  "repository-images.githubusercontent.com",
+  "opengraph.githubassets.com",
+  "github-cloud.s3.amazonaws.com",
+  "github-releases.githubusercontent.com",
+  "github-registry-files.githubusercontent.com",
+  "pkg-containers.githubusercontent.com",
+  "central.github.com",
+  "pipelines.actions.githubusercontent.com",
+  "gist.githubusercontent.com",
+  "private-avatars.githubusercontent.com",
+  "secured-user-images.githubusercontent.com",
+  "objects-origin.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+  "marketplace-screenshots.githubusercontent.com",
+  "identicons.github.com",
+  "insights.github.com",
+  "www.githubstatus.com",
+  "github-production-repository-file-5c1aeb.s3.amazonaws.com",
+  "github-production-upload-manifest-file-7fdce7.s3.amazonaws.com",
+  "github-production-user-asset-6210df.s3.amazonaws.com",
+  "github-production-repository-image-32fea6.s3.amazonaws.com",
+  "github-production-release-asset-2e65be.s3.amazonaws.com",
 ])
 const LEGACY_STATIC_ONLY_DEFAULT_DOMAINS = new Set([
   "steamcdn-a.akamaihd.net",
@@ -349,7 +393,7 @@ export function AcceleratorPage() {
         if (result.hostsMap) setResolved(prev => ({ ...prev, ...result.hostsMap }))
         setNotice(result.warning || null)
       } else if (result?.warning) {
-        setNotice(result.warning)
+        setError(`${result.warning}。请检查 WORKER_RELAY_URL 和 WORKER_RELAY_SECRET 配置。`)
       } else {
         setError(result?.error || "启动失败")
       }
@@ -390,6 +434,7 @@ export function AcceleratorPage() {
         setRunning(false)
         setHasResidual(false)
         setResolved({})
+        setNotice(result.warning || null)
       } else {
         setError(result?.error || "网络修复失败")
       }
