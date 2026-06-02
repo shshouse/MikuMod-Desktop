@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Package,
   ThumbsUp,
+  Trash2,
   User,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -18,11 +19,14 @@ import { zhCN } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { fetchModDetail, submitModReview } from "@/lib/api"
 import type { ModDetailResponse, ModReviewSummary, ModVersionSummary } from "@/lib/api"
-import { queueOneClickInstall, showOneClickInstallError } from "@/lib/mod-install"
+import { queueOneClickInstall, queueXxmiInstall, showOneClickInstallError } from "@/lib/mod-install"
+import { listManagedMods, uninstallManagedMod } from "@/lib/mod-manager"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
+import { useDownloadStore } from "@/store/download"
 
 const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
+const XXMI_MOD_NUMBER = "9"
 
 type ActiveTab = "description" | "versions" | "dependencies" | "reviews"
 
@@ -32,6 +36,7 @@ interface ModDetailPageProps {
   onSetPath: (gameId: string) => Promise<string | null | undefined>
   onNavigate: (tab: string) => void
   onBack: () => void
+  onNavigateToSettings?: () => void
 }
 
 interface SessionUser {
@@ -57,7 +62,7 @@ function formatDate(value: string) {
   })
 }
 
-export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, onBack }: ModDetailPageProps) {
+export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, onBack, onNavigateToSettings }: ModDetailPageProps) {
   const [data, setData] = useState<ModDetailResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
@@ -70,6 +75,13 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
   const [reviewContent, setReviewContent] = useState("")
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null)
+
+  const [installed, setInstalled] = useState(false)
+  const [uninstalling, setUninstalling] = useState(false)
+
+  const downloadTasks = useDownloadStore.useStore()
+
+  const isXxmi = modNumber == XXMI_MOD_NUMBER
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -115,6 +127,19 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
   const reviews: ModReviewSummary[] = data?.reviews || []
   const dependencies = mod?.dependencies || []
 
+  useEffect(() => {
+    if (!mod) return
+    const gameId = mod.game?.id || mod.game_id
+    if (!gameId) return
+    void (async () => {
+      try {
+        const managed = await listManagedMods(gameId, mod.game?.name || "未知游戏")
+        const local = managed.find((m) => m.platformModId === mod.id)
+        setInstalled(local?.installed ?? false)
+      } catch { /* ignore */ }
+    })()
+  }, [mod])
+
   const screenshots = useMemo(() => {
     if (!mod) return []
     return Array.from(new Set([
@@ -129,15 +154,40 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
     if (!mod || !data) return
     setDownloading(true)
     try {
-      await queueOneClickInstall({
-        detail: data,
-        selectedVersionId,
-        resolveGamePath: async (gameId) => localPaths[gameId] || await onSetPath(gameId),
-      })
+      if (isXxmi) {
+        await queueXxmiInstall({ detail: data, selectedVersionId })
+      } else {
+        await queueOneClickInstall({
+          detail: data,
+          selectedVersionId,
+          resolveGamePath: async (gameId) => localPaths[gameId] || await onSetPath(gameId),
+        })
+      }
     } catch (err) {
       showOneClickInstallError(err)
     } finally {
       setDownloading(false)
+    }
+  }
+
+  const handleUninstall = async () => {
+    if (!mod) return
+    const gameId = mod.game?.id || mod.game_id
+    if (!gameId) return
+    const gameName = mod.game?.name || "未知游戏"
+    const gamePath = localPaths[gameId]
+    if (!gamePath) return
+    setUninstalling(true)
+    try {
+      const managed = await listManagedMods(gameId, gameName)
+      const local = managed.find((m) => m.platformModId === mod.id)
+      if (!local) return
+      const result = await uninstallManagedMod({ gameId, gameName, modId: local.id, gamePath })
+      if (result.ok) {
+        setInstalled(false)
+      }
+    } catch { /* ignore */ } finally {
+      setUninstalling(false)
     }
   }
 
@@ -476,16 +526,60 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
               </div>
             </div>
 
-            {/* Install button */}
-            <Button
-              className="w-full gap-2"
-              size="lg"
-              onClick={startInstall}
-              disabled={downloading || versions.length === 0}
-            >
-              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              {downloading ? "准备中..." : "一键安装"}
-            </Button>
+            {/* Smart install button */}
+            {(() => {
+              const hasActiveDownload = downloadTasks.some(
+                (t) => t.platformModId === mod.id && (t.status === "downloading" || t.status === "paused")
+              )
+              const isBusy = downloading || hasActiveDownload
+
+              if (installed) {
+                if (isXxmi) {
+                  return (
+                    <Button
+                      className="w-full gap-2"
+                      size="lg"
+                      onClick={() => { onNavigateToSettings?.(); }}
+                    >
+                      <Package className="w-4 h-4" />
+                      前往 XXMI 设置
+                    </Button>
+                  )
+                }
+                return (
+                  <Button
+                    className="w-full gap-2"
+                    size="lg"
+                    variant="destructive"
+                    onClick={handleUninstall}
+                    disabled={uninstalling}
+                  >
+                    {uninstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {uninstalling ? "卸载中..." : "卸载"}
+                  </Button>
+                )
+              }
+
+              return (
+                <Button
+                  className="w-full gap-2"
+                  size="lg"
+                  onClick={() => {
+                    if (!mod || !data) return
+                    if (isBusy) return
+                    void startInstall()
+                  }}
+                  disabled={isBusy || versions.length === 0}
+                >
+                  {isBusy ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  {hasActiveDownload ? "下载中..." : (downloading ? "准备中..." : "一键安装")}
+                </Button>
+              )
+            })()}
 
             {/* Author */}
             {mod.author && (

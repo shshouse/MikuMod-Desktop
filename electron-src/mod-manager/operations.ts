@@ -5,7 +5,8 @@ import {
   sanitizeSegment, createId, createStableHash,
   pathExists, ensureDir, removePath, removeFileIfExists,
   copyFileSafe, copyDirectoryContents, listFilesRecursive,
-  extractArchive, resolveContentRoot, resolveDownloadedContentRoot,
+  hashFile, extractArchive, resolveContentRoot, resolveDownloadedContentRoot,
+  deepClone,
 } from './utils'
 import { getGameDirs, loadState, saveState, ensureGameDirs } from './state'
 import { buildManifest, writeManifest, getManifestIndexByModId } from './manifest'
@@ -104,8 +105,7 @@ async function ensureRecordMatchesActiveFile(record: any, state: ModState, cache
   if (!expectedFile) return
   const targetPath = resolveGamePathTarget(gamePath, record.relativePath)
   if (!(await pathExists(targetPath))) throw new Error(`检测到游戏文件已丢失: ${record.relativePath}`)
-  const { hashFile: hf } = await import('./utils')
-  const currentHash = await hf(targetPath)
+  const currentHash = await hashFile(targetPath)
   if (currentHash !== expectedFile.sha256) throw new Error(`检测到游戏文件已被外部修改: ${record.relativePath}`)
 }
 
@@ -115,7 +115,7 @@ async function restoreRecordToDisk(record: any, state: ModState, cache: Map<stri
     const activeModId = record.owners[record.owners.length - 1]
     const activeMod = state.mods[activeModId]
     if (!activeMod) throw new Error(`缺少模组记录: ${activeModId}`)
-    const sourcePath = path.join(activeMod.libraryPath, 'source', ...record.relativePath.split('/'))
+    const sourcePath = path.join(activeMod.libraryPath, ...record.relativePath.split('/'))
     await copyFileSafe(sourcePath, targetPath)
     return
   }
@@ -136,8 +136,8 @@ function resolveImportName(input: ImportInput) {
   return ext ? baseName.slice(0, -ext.length) : baseName
 }
 
-export async function importExternalMod(app: Electron.App, input: ImportInput, modsRootDir: string): Promise<ModSummary> {
-  const dirs = getGameDirs(app, input.gameName, modsRootDir)
+export async function importExternalMod(app: Electron.App, input: ImportInput, modsRootDir: string, backupsRootDir?: string): Promise<ModSummary> {
+  const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
   const state = await loadState(dirs, input.gameId, input.gameName)
   const isArchive = input.sourceType === 'archive' || input.sourceType === 'download'
 
@@ -182,7 +182,7 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
     if (existingForPlatform) {
       modRecord = existingForPlatform
       modDir = existingForPlatform.libraryPath
-      sourceDir = path.join(modDir, 'source')
+      sourceDir = modDir
       await removePath(sourceDir)
       const entries = await fsPromises.readdir(modDir, { withFileTypes: true }).catch(() => [])
       for (const entry of entries) {
@@ -191,11 +191,13 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
         }
       }
     } else {
-      const hasFixedPlatformFolder = input.sourceType === 'download' && input.modNumber
+      // 平台模组：固定目录为 mods/<modNumber>
+  // 用户导入：由上层传入 gameName='USER' 并在 getGameDirs 中落到 mods/user
+  const hasFixedPlatformFolder = input.sourceType === 'download' && input.modNumber && input.gameName !== 'USER'
       const preferredName = hasFixedPlatformFolder ? String(input.modNumber) : resolveImportName(input)
       const folderName = hasFixedPlatformFolder ? sanitizeSegment(preferredName) : await ensureUniqueFolder(dirs.gameDir, preferredName)
       modDir = path.join(dirs.gameDir, folderName)
-      sourceDir = path.join(modDir, 'source')
+      sourceDir = modDir
       await ensureDir(modDir)
       await removePath(sourceDir)
       modRecord = {
@@ -255,7 +257,7 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
   }
 }
 
-export async function importDownloadedArchive(app: Electron.App, input: any, modsRootDir: string) {
+export async function importDownloadedArchive(app: Electron.App, input: any, modsRootDir: string, backupsRootDir?: string) {
   return importExternalMod(app, {
     gameId: input.gameId,
     gameName: input.gameName,
@@ -266,13 +268,13 @@ export async function importDownloadedArchive(app: Electron.App, input: any, mod
     platformVersionId: input.platformVersionId,
     modNumber: input.modNumber,
     archiveFileName: input.archiveFileName,
-  }, modsRootDir)
+  }, modsRootDir, backupsRootDir)
 }
 
 // --- 列表 ---
 
-export async function listManagedMods(app: Electron.App, input: ListInput, modsRootDir: string) {
-  const dirs = getGameDirs(app, input.gameName, modsRootDir)
+export async function listManagedMods(app: Electron.App, input: ListInput, modsRootDir: string, backupsRootDir?: string) {
+  const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
   const state = await loadState(dirs, input.gameId, input.gameName)
   const cache = new Map<string, ManifestIndex>()
   const summaries: ModSummary[] = []
@@ -294,8 +296,8 @@ export async function listManagedMods(app: Electron.App, input: ListInput, modsR
 
 // --- 安装 ---
 
-export async function installManagedMod(app: Electron.App, input: InstallInput, modsRootDir: string) {
-  const dirs = getGameDirs(app, input.gameName, modsRootDir)
+export async function installManagedMod(app: Electron.App, input: InstallInput, modsRootDir: string, backupsRootDir?: string) {
+  const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
   const state = await loadState(dirs, input.gameId, input.gameName)
   const modRecord = state.mods[input.modId]
 
@@ -315,9 +317,9 @@ export async function installManagedMod(app: Electron.App, input: InstallInput, 
     if (shouldSkipInstallFile(file.relativePath)) continue
     const key = String(file.relativePath || '').toLowerCase()
     const targetPath = resolveGamePathTarget(input.gamePath, file.relativePath)
-    const sourcePath = path.join(modRecord.libraryPath, 'source', ...file.relativePath.split('/'))
+    const sourcePath = path.join(modRecord.libraryPath, ...file.relativePath.split('/'))
     const currentRecord = state.files[key]
-      ? JSON.parse(JSON.stringify(state.files[key]))
+      ? deepClone(state.files[key])
       : { relativePath: file.relativePath, owners: [], original: null }
 
     if (currentRecord.owners.length > 0) {
@@ -365,8 +367,8 @@ export async function installManagedMod(app: Electron.App, input: InstallInput, 
 
 // --- 卸载 ---
 
-export async function uninstallManagedMod(app: Electron.App, input: UninstallInput, modsRootDir: string) {
-  const dirs = getGameDirs(app, input.gameName, modsRootDir)
+export async function uninstallManagedMod(app: Electron.App, input: UninstallInput, modsRootDir: string, backupsRootDir?: string) {
+  const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
   const state = await loadState(dirs, input.gameId, input.gameName)
   const modRecord = state.mods[input.modId]
 
@@ -392,7 +394,7 @@ export async function uninstallManagedMod(app: Electron.App, input: UninstallInp
     const record = state.files[key]
     if (!record) continue
     await ensureRecordMatchesActiveFile(record, state, cache, input.gamePath)
-    const nextRecord = JSON.parse(JSON.stringify(record))
+    const nextRecord = deepClone(record)
     nextRecord.owners = Array.isArray(nextRecord.owners) ? nextRecord.owners.filter((id: string) => id !== input.modId) : []
     stagedRecords.push({ key, record: nextRecord })
   }

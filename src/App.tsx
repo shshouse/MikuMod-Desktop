@@ -176,7 +176,7 @@ function App() {
     // mod:123 — in-app mod detail page
     if (activeTab.startsWith("mod:")) {
       const modNumber = activeTab.slice(4)
-      return <ModDetailPage key={modNumber} modNumber={modNumber} localPaths={localPaths} onSetPath={handleSetPath} onNavigate={navigateTo} onBack={handleBack} />
+      return <ModDetailPage key={modNumber} modNumber={modNumber} localPaths={localPaths} onSetPath={handleSetPath} onNavigate={navigateTo} onBack={handleBack} onNavigateToSettings={() => navigateTo("settings")} />
     }
 
     // post:123 — in-app post detail page

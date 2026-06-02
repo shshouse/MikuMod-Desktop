@@ -1,0 +1,70 @@
+export const IpcChannels = {
+  window: {
+    minimize: 'window-minimize',
+    maximize: 'window-maximize',
+    close: 'window-close',
+    isMaximized: 'window-is-maximized',
+  },
+  http: {
+    request: 'http-request',
+  },
+  filesystem: {
+    getAppDir: 'get-app-dir',
+    getAppDataDir: 'get-app-data-dir',
+    getAppModsDir: 'get-app-mods-dir',
+    getAppBackupsDir: 'get-app-backups-dir',
+    authorizeDirectory: 'authorize-directory',
+    selectDirectory: 'select-directory',
+    selectModFile: 'select-mod-file',
+    openDirectory: 'open-directory',
+    openExternal: 'open-external',
+    fileExists: 'file-exists',
+    readFile: 'read-file',
+    writeFile: 'write-file',
+    scanDirectory: 'scan-directory',
+    deleteFile: 'delete-file',
+    copyFile: 'copy-file',
+  },
+  download: {
+    start: 'start-download',
+    pause: 'pause-download',
+    resume: 'resume-download',
+    cancel: 'cancel-download',
+    event: 'download-event',
+  },
+  modManager: {
+    list: 'managed-mods-list',
+    importExternal: 'managed-mods-import-external',
+    importDownload: 'managed-mods-import-download',
+    install: 'managed-mods-install',
+    uninstall: 'managed-mods-uninstall',
+  },
+  xxmi: {
+    importPackage: 'xxmi-import-package',
+    getFrameworkInfo: 'xxmi-get-framework-info',
+    bindGame: 'xxmi-bind-game',
+    getBinding: 'xxmi-get-binding',
+    launchGame: 'xxmi-launch-game',
+    getModsDir: 'xxmi-get-mods-dir',
+    getAllModsDirs: 'xxmi-get-all-mods-dirs',
+    uninstall: 'xxmi-uninstall',
+  },
+  updater: {
+    check: 'updater-check',
+    download: 'updater-download',
+    install: 'updater-install',
+    getChannel: 'updater-get-channel',
+    setChannel: 'updater-set-channel',
+    event: 'updater-event',
+  },
+  login: {
+    open: 'open-login-window',
+  },
+  steam: {
+    scan: 'scan-steam-games',
+  },
+  deepLink: 'deep-link',
+  appVersion: 'get-app-version',
+} as const
+
+export type IpcChannels = typeof IpcChannels

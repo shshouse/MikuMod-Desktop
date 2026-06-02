@@ -7,6 +7,7 @@ export interface DesktopPaths {
   dataDir: string
   logsDir: string
   modsDir: string
+  backupsDir: string
 }
 
 function getAppBaseDir() {
@@ -34,14 +35,17 @@ export function initializeDesktopPaths(): DesktopPaths {
   const logsDir = path.join(dataDir, 'logs')
   const preferredModsDir = path.join(appDir, 'mods')
   const modsDir = canWriteDirectory(preferredModsDir) ? preferredModsDir : path.join(dataDir, 'mods')
+  const preferredBackupsDir = path.join(appDir, 'backups')
+  const backupsDir = canWriteDirectory(preferredBackupsDir) ? preferredBackupsDir : path.join(dataDir, 'backups')
 
   fs.mkdirSync(dataDir, { recursive: true })
   fs.mkdirSync(logsDir, { recursive: true })
   fs.mkdirSync(modsDir, { recursive: true })
+  fs.mkdirSync(backupsDir, { recursive: true })
   app.setPath('userData', dataDir)
   app.setPath('logs', logsDir)
 
-  _paths = { appDir, dataDir, logsDir, modsDir }
+  _paths = { appDir, dataDir, logsDir, modsDir, backupsDir }
   return _paths
 }
 

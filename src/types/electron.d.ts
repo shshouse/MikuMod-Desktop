@@ -8,38 +8,27 @@ import type {
   UninstallManagedModResult,
 } from "@/lib/mod-manager"
 
-interface UpdaterInfo {
-  version?: string
-  releaseName?: string
-  releaseNotes?: string | string[]
-  [key: string]: unknown
-}
+import type {
+  DownloadResumeData,
+  AcceleratorProxyMode,
+  UpdaterInfo,
+  UpdaterProgress,
+  UpdateChannel,
+} from '../../electron-src/shared/electron-api'
 
-interface UpdaterProgress {
-  percent?: number
-  bytesPerSecond?: number
-  transferred?: number
-  total?: number
-  [key: string]: unknown
+export type {
+  DownloadResumeData,
+  AcceleratorProxyMode,
+  UpdaterInfo,
+  UpdaterProgress,
+  UpdateChannel,
 }
-
-export interface DownloadResumeData {
-  path: string
-  urlChain: string[]
-  mimeType?: string
-  offset: number
-  length: number
-  lastModified?: string
-  eTag?: string
-  startTime?: number
-}
-
-type AcceleratorProxyMode = "system" | "hosts" | null
 
 export interface ElectronAPI {
   getAppDir: () => Promise<string>
   getAppDataDir: () => Promise<string>
   getAppModsDir: () => Promise<string>
+  getAppBackupsDir: () => Promise<string>
   authorizeDirectory: (path: string) => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   selectModFile: () => Promise<string | null>
@@ -54,12 +43,11 @@ export interface ElectronAPI {
   scanSteamGames: () => Promise<Array<{ appId: string; name: string; installPath: string }>>
   openLoginWindow: (url: string) => Promise<void>
 
-  // 自动更新
   updaterCheck: () => Promise<{ available: boolean; info?: UpdaterInfo; reason?: string }>
   updaterDownload: () => Promise<boolean>
   updaterInstall: () => void
-  updaterGetChannel: () => Promise<'stable' | 'beta' | 'alpha'>
-  updaterSetChannel: (channel: 'stable' | 'beta' | 'alpha') => Promise<{ success: boolean }>
+  updaterGetChannel: () => Promise<UpdateChannel>
+  updaterSetChannel: (channel: UpdateChannel) => Promise<{ success: boolean }>
   getAppVersion: () => Promise<string>
   onUpdaterEvent: (callback: (data: { type: string; info?: UpdaterInfo; progress?: UpdaterProgress; error?: string }) => void) => void
 
@@ -89,7 +77,6 @@ export interface ElectronAPI {
   installManagedMod: (input: InstallManagedModInput) => Promise<InstallManagedModResult>
   uninstallManagedMod: (input: UninstallManagedModInput) => Promise<UninstallManagedModResult>
 
-  // 加速器
   acceleratorStatus: () => Promise<{ running: boolean; resolved: Record<string, string>; activeDomains?: string[]; mode?: AcceleratorProxyMode; pacUrl?: string | null }>
   acceleratorSetDomains: (domains: unknown[]) => Promise<{ success: boolean }>
   acceleratorGetDomains: () => Promise<unknown[]>

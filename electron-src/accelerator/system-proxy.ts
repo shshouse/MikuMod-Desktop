@@ -2,29 +2,19 @@ import {
   SYSTEM_PROXY_PORT,
   PAC_PATH,
   SYSTEM_PROXY_SNAPSHOT_FILE,
-  GIT_PROXY_SNAPSHOT_FILE,
-  GIT_PROXY_DOMAINS,
 } from './constants'
 import {
   runPowerShell,
   escapePowerShellSingleQuotedString,
-  readGitConfig,
-  writeGitConfig,
-  isGitAvailable,
   readJsonSnapshot,
   writeJsonSnapshot,
   removeJsonSnapshot,
   joinMessages,
 } from './utils'
-import { normalizeDomain } from './domains'
-
-// --- PAC URL ---
 
 export function getSystemProxyPacUrl() {
   return `http://127.0.0.1:${SYSTEM_PROXY_PORT}${PAC_PATH}`
 }
-
-// --- Windows 代理注册表 ---
 
 function systemProxyNotifyScript() {
   return `
@@ -121,89 +111,6 @@ export async function hasSystemProxyResidual() {
     return current.AutoConfigURL === getSystemProxyPacUrl()
   } catch {
     return false
-  }
-}
-
-// --- Git 代理 ---
-
-function getGitProxyDomains(domainList: string[]) {
-  const selected = new Set(domainList.map(normalizeDomain).filter(Boolean) as string[])
-  if (selected.has('github.com')) {
-    selected.add('api.github.com')
-    selected.add('raw.githubusercontent.com')
-    selected.add('objects.githubusercontent.com')
-    selected.add('github-releases.githubusercontent.com')
-    selected.add('release-assets.githubusercontent.com')
-  }
-  return [...selected].filter(domain => GIT_PROXY_DOMAINS.has(domain))
-}
-
-function getGitProxyConfigKey(domain: string) {
-  return `http.https://${domain}.proxy`
-}
-
-export async function applyGitProxyConfig(domainList: string[]) {
-  const domains = getGitProxyDomains(domainList)
-  if (domains.length === 0) return { changed: false }
-  if (!await isGitAvailable()) return { changed: false, warning: '\u672a\u68c0\u6d4b\u5230 Git\uff0c\u5df2\u8df3\u8fc7 GitHub Git \u4ee3\u7406\u914d\u7f6e' }
-  const snapshot = readJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE)
-  if (!snapshot) {
-    const original: Record<string, string | null> = {}
-    for (const domain of domains) {
-      original[domain] = await readGitConfig(['--global', '--get', getGitProxyConfigKey(domain)]) || null
-    }
-    writeJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE, original)
-  }
-  try {
-    for (const domain of domains) {
-      await writeGitConfig(['--global', getGitProxyConfigKey(domain), `http://127.0.0.1:${SYSTEM_PROXY_PORT}`])
-    }
-    return { changed: true }
-  } catch (e: any) {
-    return { changed: false, warning: `GitHub Git \u4ee3\u7406\u914d\u7f6e\u5931\u8d25\uff1a${e.message}` }
-  }
-}
-
-export async function restoreGitProxyConfig() {
-  const snapshot = readJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE)
-  if (!snapshot) return { changed: false }
-  if (!await isGitAvailable()) return { changed: false, warning: '\u672a\u68c0\u6d4b\u5230 Git\uff0c\u65e0\u6cd5\u6062\u590d Git \u4ee3\u7406\u914d\u7f6e' }
-  for (const [domain, value] of Object.entries(snapshot)) {
-    const key = getGitProxyConfigKey(domain)
-    if (value) await writeGitConfig(['--global', key, value as string])
-    else {
-      try { await writeGitConfig(['--global', '--unset-all', key]) } catch {}
-    }
-  }
-  removeJsonSnapshot(GIT_PROXY_SNAPSHOT_FILE)
-  return { changed: true }
-}
-
-export async function repairGitSchannelConfig() {
-  if (process.platform !== 'win32') return { changed: false }
-  if (!await isGitAvailable()) return { changed: false }
-
-  const effectiveBackend = (await readGitConfig(['--get', 'http.sslBackend'])).toLowerCase()
-  const globalCAInfo = await readGitConfig(['--global', '--get', 'http.sslCAInfo'])
-  const needsBackendFix = effectiveBackend !== 'schannel'
-  const needsCAInfoFix = Boolean(globalCAInfo)
-
-  if (!needsBackendFix && !needsCAInfoFix) {
-    const schannelUseSSLCAInfo = (await readGitConfig(['--global', '--get', 'http.schannelUseSSLCAInfo'])).toLowerCase()
-    const schannelCheckRevoke = (await readGitConfig(['--global', '--get', 'http.schannelCheckRevoke'])).toLowerCase()
-    if (schannelUseSSLCAInfo === 'false' && schannelCheckRevoke === 'false') return { changed: false }
-  }
-
-  try {
-    if (needsBackendFix) await writeGitConfig(['--global', 'http.sslBackend', 'schannel'])
-    if (needsCAInfoFix) {
-      try { await writeGitConfig(['--global', '--unset', 'http.sslCAInfo']) } catch {}
-    }
-    await writeGitConfig(['--global', 'http.schannelUseSSLCAInfo', 'false'])
-    await writeGitConfig(['--global', 'http.schannelCheckRevoke', 'false'])
-    return { changed: true, warning: '\u5df2\u4fee\u590d Git for Windows \u8bc1\u4e66\u914d\u7f6e\uff0cGit \u5c06\u4f7f\u7528 Windows \u7cfb\u7edf\u4fe1\u4efb\u5b58\u50a8' }
-  } catch (e: any) {
-    return { changed: false, warning: `Git \u8bc1\u4e66\u914d\u7f6e\u4fee\u590d\u5931\u8d25\uff1a${e.message}` }
   }
 }
 

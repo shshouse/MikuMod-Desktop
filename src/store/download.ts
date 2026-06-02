@@ -4,6 +4,9 @@ import { getDesktopSettings, persistKey } from "@/lib/desktop-config"
 import { importDownloadedMod, installManagedMod, listManagedMods, uninstallManagedMod } from "@/lib/mod-manager"
 import { logger } from "@/lib/logger"
 
+export const XXMI_IMPORT_MARKER = "__xxmi_import__"
+export const XXMI_GAME_ID = "__xxmi__"
+
 export interface DownloadTask {
   id: string
   name: string
@@ -346,7 +349,12 @@ class DownloadStore {
           saveDir = `${settings.downloadDirectory}\\mods\\${gameName}\\${modFolder}`
         } else {
           const modsDir = await window.electronAPI.getAppModsDir()
-          saveDir = `${modsDir}\\${gameName}\\${modFolder}`
+          if (task.gameId === XXMI_GAME_ID) {
+            // XXMI: 固定下载到应用 mods 根目录下的 XXMI
+            saveDir = `${modsDir}\\XXMI`
+          } else {
+            saveDir = `${modsDir}\\${gameName}\\${modFolder}`
+          }
         }
       } catch {
         saveDir = `${settings.downloadDirectory || "downloads"}\\mods\\${gameName}\\${modFolder}`
@@ -417,9 +425,53 @@ class DownloadStore {
     await window.electronAPI?.openDirectory(folderPath)
   }
 
+  async importToAppMods(id: string) {
+    const task = this.tasks.find((item) => item.id === id)
+    if (!task?.savePath || task.status !== "done") return false
+    try {
+      const exists = await window.electronAPI?.fileExists(task.savePath)
+      if (!exists) {
+        this.updateTask(id, { status: "error", installing: false, error: "下载文件不存在" })
+        return false
+      }
+      this.updateTask(id, { installing: true, error: undefined })
+      const imported = await importDownloadedMod({
+        gameId: task.gameId || XXMI_GAME_ID,
+        gameName: task.game,
+        sourcePath: task.savePath,
+        sourceType: "download",
+        modName: task.name,
+        platformModId: task.platformModId,
+        platformVersionId: task.platformVersionId,
+        modNumber: task.modNumber,
+        downloadId: task.id,
+        fileName: task.fileName,
+        archiveFileName: task.archiveFileName,
+      })
+      this.updateTask(id, {
+        installing: false,
+        imported: true,
+        managedModId: imported.id,
+        installed: true,
+        installedPath: undefined,
+        error: undefined,
+      })
+      this.emit()
+      return true
+    } catch (err) {
+      logger.error("importToAppMods failed", { download_id: id }, err)
+      this.updateTask(id, { installing: false, error: err instanceof Error ? err.message : "导入失败" })
+      return false
+    }
+  }
+
   async installToGame(id: string, gamePath: string) {
     const task = this.tasks.find((item) => item.id === id)
     if (!task?.savePath || task.status !== "done") return false
+
+    if (gamePath === XXMI_IMPORT_MARKER) {
+      return this.importToAppMods(id)
+    }
 
     try {
       const exists = await window.electronAPI?.fileExists(task.savePath)

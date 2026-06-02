@@ -34,6 +34,55 @@ export function toRelativePosix(rootDir: string, filePath: string) {
   return normalized
 }
 
+// --- 深拷贝 ---
+
+/**
+ * 轻量级深拷贝函数
+ *
+ * 相比 JSON.parse(JSON.stringify()) 的优势：
+ * 1. 性能更优：避免 JSON 字符串序列化和解析的双重开销
+ * 2. 安全可靠：正确处理循环引用，不会抛出运行时错误
+ * 3. 类型完整：保留 Date 对象等特殊类型的语义信息
+ */
+export function deepClone<T>(value: T): T {
+  return cloneInternal(value, new WeakMap()) as T
+}
+
+function cloneInternal(value: unknown, cache: WeakMap<object, unknown>): unknown {
+  // 基本类型和 null/undefined 直接返回
+  if (value === null || typeof value !== 'object') {
+    return value
+  }
+
+  // 优先处理已缓存的循环引用
+  if (cache.has(value as object)) {
+    return cache.get(value as object)
+  }
+
+  // Date 对象：保留时间戳语义
+  if (value instanceof Date) {
+    return new Date(value.getTime())
+  }
+
+  // 数组
+  if (Array.isArray(value)) {
+    const result: unknown[] = []
+    cache.set(value, result)
+    for (const item of value) {
+      result.push(cloneInternal(item, cache))
+    }
+    return result
+  }
+
+  // 普通对象：仅克隆自有属性，避免原型链污染
+  const result: Record<string, unknown> = {}
+  cache.set(value, result)
+  for (const key of Object.keys(value as object)) {
+    result[key] = cloneInternal((value as Record<string, unknown>)[key], cache)
+  }
+  return result
+}
+
 // --- 文件系统 ---
 
 export async function pathExists(targetPath: string) {

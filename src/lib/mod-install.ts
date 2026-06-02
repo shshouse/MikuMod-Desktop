@@ -2,9 +2,12 @@ import { fetchModDetail, getDownloadToken } from "@/lib/api"
 import type { ModDetailSummary, ModDependencySummary } from "@/lib/api"
 import { listManagedMods, installManagedMod } from "@/lib/mod-manager"
 import type { ManagedModSummary } from "@/lib/mod-manager"
-import { useDownloadStore } from "@/store/download"
+import { useDownloadStore, XXMI_IMPORT_MARKER } from "@/store/download"
 import { showToast } from "@/lib/toast"
 import { showConfirm } from "@/lib/confirm"
+
+const XXMI_GAME_ID = "__xxmi__"
+const XXMI_GAME_NAME = "XXMI"
 
 function formatSize(bytes?: number | null) {
   return bytes ? `${(bytes / (1024 * 1024)).toFixed(2)} MB` : "未知"
@@ -21,11 +24,16 @@ async function queueDownload(input: {
   title: string
   gameId: string
   gameName: string
-  gamePath: string
   versionId?: string
   autoInstallAfterTaskIds?: string[]
+  /** 下载保存目录路径，不填则走默认逻辑 */
+  saveDir?: string
 }) {
   const token = await getDownloadToken(input.modId, input.versionId)
+  const platformModId: string | undefined = input.modId
+  const isXxmi = input.gameId === XXMI_GAME_ID
+  const saveDirMarker = isXxmi ? XXMI_IMPORT_MARKER : input.saveDir
+
   const taskId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   const result = await useDownloadStore.getState().addDownload({
     id: taskId,
@@ -36,10 +44,10 @@ async function queueDownload(input: {
     fileName: originalFileName(token.fileName),
     archiveFileName: token.fileName,
     size: formatSize(token.fileSize),
-    platformModId: input.modId,
+    platformModId,
     platformVersionId: input.versionId,
     modNumber: input.modNumber ? String(input.modNumber) : undefined,
-    autoInstallGamePath: input.gamePath,
+    autoInstallGamePath: saveDirMarker,
     autoInstallAfterTaskIds: input.autoInstallAfterTaskIds,
   })
   return result?.taskId ?? taskId
@@ -88,7 +96,7 @@ export async function queueOneClickInstall({ detail, selectedVersionId, resolveG
   }
   const depTaskIds: string[] = []
   for (const dep of needDownload) {
-    const tid = await queueDownload({ modId: dep.mod_id, modNumber: dep.mod_number, title: dep.title || dep.mod_id, gameId, gameName, gamePath })
+    const tid = await queueDownload({ modId: dep.mod_id, modNumber: dep.mod_number, title: dep.title || dep.mod_id, gameId, gameName, versionId: undefined, saveDir: gamePath })
     depTaskIds.push(tid)
   }
   await queueDownload({
@@ -97,11 +105,39 @@ export async function queueOneClickInstall({ detail, selectedVersionId, resolveG
     title: mod.title,
     gameId,
     gameName,
-    gamePath,
     versionId: selectedVersionId || versions[0]?.id,
+    saveDir: gamePath,
     autoInstallAfterTaskIds: depTaskIds.length > 0 ? depTaskIds : undefined,
   })
   showToast({ message: needDownload.length > 0 ? `已加入下载队列 (含 ${needDownload.length} 个前置)，完成后自动安装` : "已加入下载队列，完成后自动安装", type: "success" })
+  return { status: "ok" }
+}
+
+export async function queueXxmiInstall(input: {
+  detail: { mod: ModDetailSummary; versions: { id: string }[] }
+  selectedVersionId?: string | null
+}): Promise<{ status: "ok" | "cancelled" | "already_installed" }> {
+  const { mod, versions } = input.detail
+  const deps = (mod.dependencies || []).filter((d: ModDependencySummary) => d.dependency_type === "required" && d.mod_id)
+  if (deps.length > 0) {
+    showToast({ message: "XXMI 包含前置模组，请通过普通安装流程安装", type: "info" })
+    return { status: "cancelled" }
+  }
+  const managed = await listManagedMods(XXMI_GAME_ID, XXMI_GAME_NAME).catch(() => [])
+  const local = managed.find((m) => m.platformModId === mod.id)
+  if (local?.installed) {
+    showToast({ message: "XXMI 已安装", type: "info" })
+    return { status: "already_installed" }
+  }
+  await queueDownload({
+    modId: mod.id,
+    modNumber: mod.mod_number,
+    title: mod.title,
+    gameId: XXMI_GAME_ID,
+    gameName: XXMI_GAME_NAME,
+    versionId: input.selectedVersionId || versions[0]?.id,
+  })
+  showToast({ message: "已加入下载队列，下载完成后自动导入", type: "success" })
   return { status: "ok" }
 }
 

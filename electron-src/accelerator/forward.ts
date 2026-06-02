@@ -3,10 +3,8 @@ import net from 'net'
 import type http from 'http'
 import { UPSTREAM_TIMEOUT_MS } from './constants'
 import { acceleratorState } from './state'
-import { normalizeDomain, needsWorkerRelay, getWorkerRelayConfig } from './domains'
+import { normalizeDomain } from './domains'
 import { resolveCandidatesViaDoh } from './dns'
-
-// --- 域名判定 ---
 
 export function isAcceleratedDomain(domain: string) {
   const safeDomain = normalizeDomain(domain)
@@ -27,8 +25,6 @@ export async function resolveAcceleratedDomainIP(domain: string) {
   acceleratorState.resolvedCandidates[safeDomain] = candidates
   return candidates[0]
 }
-
-// --- 上游请求构造 ---
 
 function getResolvedCandidates(domain: string, primaryIP: string) {
   const candidates: string[] = []
@@ -64,88 +60,9 @@ function createUpstreamOptions(clientReq: http.IncomingMessage, domain: string, 
   }
 }
 
-// --- Worker Relay ---
-
-const workerAgent = new https.Agent({
-  keepAlive: true,
-  keepAliveMsecs: 30000,
-  maxSockets: 32,
-  maxFreeSockets: 8,
-})
-
-function forwardViaWorker(clientReq: http.IncomingMessage, clientRes: http.ServerResponse, domain: string) {
-  const relayConfig = getWorkerRelayConfig()
-  if (!relayConfig.url || !relayConfig.secret) {
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(503)
-      clientRes.end('Worker relay is not configured. Please set WORKER_RELAY_URL and WORKER_RELAY_SECRET, then restart the app.')
-    }
-    return
-  }
-
-  let workerBaseUrl: URL
-  let workerUrl: URL
-  try {
-    workerBaseUrl = new URL(relayConfig.url)
-    workerUrl = new URL(clientReq.url!, workerBaseUrl)
-  } catch {
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(503)
-      clientRes.end('Worker relay URL is invalid. Please check WORKER_RELAY_URL and restart the app.')
-    }
-    return
-  }
-
-  const headers = { ...clientReq.headers }
-  headers['host'] = workerBaseUrl.host
-  headers['x-proxy-host'] = domain
-  headers['x-proxy-secret'] = relayConfig.secret
-
-  const proxyReq = https.request(workerUrl.href, {
-    method: clientReq.method,
-    headers,
-    timeout: 30000,
-    agent: workerAgent,
-  }, (proxyRes) => {
-    const resHeaders = { ...proxyRes.headers }
-    delete resHeaders['access-control-allow-origin']
-    delete resHeaders['x-cache']
-    if (proxyRes.statusCode! >= 400) {
-      console.warn(`[Accelerator] Worker relay returned ${proxyRes.statusCode} for ${domain}${clientReq.url}`)
-    }
-    clientRes.writeHead(proxyRes.statusCode!, resHeaders)
-    proxyRes.pipe(clientRes)
-  })
-
-  proxyReq.on('error', (err) => {
-    console.error(`[Accelerator] Worker relay error for ${domain}: ${err.message}`)
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(502)
-      clientRes.end(`Worker relay failed: ${err.message}`)
-    }
-  })
-
-  proxyReq.on('timeout', () => {
-    console.error(`[Accelerator] Worker relay timeout for ${domain}`)
-    proxyReq.destroy()
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(504)
-      clientRes.end('Worker Relay Timeout')
-    }
-  })
-
-  clientReq.pipe(proxyReq)
-}
-
-// --- SNI 重试 ---
-
 function retryWithSNI(clientReq: http.IncomingMessage, clientRes: http.ServerResponse, domain: string, realIP: string, lastError: Error | null) {
   if (clientRes.headersSent) return
   if (!isRetryableRequestMethod(clientReq.method)) {
-    if (needsWorkerRelay(domain)) {
-      console.warn(`[Accelerator] Non-retryable ${clientReq.method} for ${domain}, falling back to Worker relay`)
-      return forwardViaWorker(clientReq, clientRes, domain)
-    }
     clientRes.writeHead(502)
     clientRes.end(`Bad Gateway: ${lastError?.message || 'upstream connection failed'}`)
     return
@@ -162,10 +79,6 @@ function retryWithSNI(clientReq: http.IncomingMessage, clientRes: http.ServerRes
     if (clientRes.headersSent) return
     const attempt = attempts[index]
     if (!attempt) {
-      if (needsWorkerRelay(domain)) {
-        console.warn(`[Accelerator] All direct attempts failed for ${domain}, falling back to Worker relay`)
-        return forwardViaWorker(clientReq, clientRes, domain)
-      }
       clientRes.writeHead(502)
       clientRes.end(`Bad Gateway: ${previousError?.message || 'all upstream candidates failed'}`)
       return
@@ -197,8 +110,6 @@ function retryWithSNI(clientReq: http.IncomingMessage, clientRes: http.ServerRes
 
   tryAttempt(0, lastError)
 }
-
-// --- 主转发 ---
 
 export function forwardRequest(clientReq: http.IncomingMessage, clientRes: http.ServerResponse, domain: string, realIP: string) {
   const options = createUpstreamOptions(clientReq, domain, realIP, '')

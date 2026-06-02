@@ -21,8 +21,9 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shared/*": ["electron-src/shared/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "electron-src/shared"]
 }

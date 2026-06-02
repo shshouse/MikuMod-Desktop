@@ -1,0 +1,104 @@
+import path from 'path'
+import { BrowserWindow, shell } from 'electron'
+import { writeMainLog } from './logger'
+import { isAllowedExternalUrl } from './security'
+import { IpcChannels } from '@shared/ipc-channels'
+
+let mainWindow: BrowserWindow | null = null
+let loginWindow: BrowserWindow | null = null
+
+export function getMainWindow() { return mainWindow }
+
+function attachWindowDiagnostics(win: BrowserWindow) {
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    writeMainLog(`[Window] did-fail-load code=${errorCode} description=${errorDescription} url=${validatedURL} mainFrame=${isMainFrame}`)
+  })
+  win.webContents.on('did-fail-provisional-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    writeMainLog(`[Window] did-fail-provisional-load code=${errorCode} description=${errorDescription} url=${validatedURL} mainFrame=${isMainFrame}`)
+  })
+  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+    writeMainLog(`[Window] preload-error path=${preloadPath} error=${(error as any)?.stack || (error as any)?.message || error}`)
+  })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    writeMainLog(`[Window] render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
+  })
+  win.webContents.on('console-message', (_event, levelOrDetails, message, line, sourceId) => {
+    const details = typeof levelOrDetails === 'object'
+      ? levelOrDetails as any
+      : { level: levelOrDetails, message, line, sourceId }
+    writeMainLog(`[Renderer] level=${details.level} ${details.sourceId || ''}:${details.line || 0} ${details.message || ''}`)
+  })
+}
+
+export function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 1024,
+    minHeight: 700,
+    frame: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    icon: path.join(__dirname, '../public/favicon.ico'),
+    backgroundColor: '#09090b',
+    show: false,
+  })
+
+  attachWindowDiagnostics(mainWindow)
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch((err) => {
+      writeMainLog(`[Window] loadURL failed: ${err?.stack || err?.message || err}`)
+    })
+  } else {
+    const indexPath = path.join(__dirname, '../dist/index.html')
+    writeMainLog(`[Window] loading ${indexPath}`)
+    mainWindow.loadFile(indexPath).catch((err) => {
+      writeMainLog(`[Window] loadFile failed: ${err?.stack || err?.message || err}`)
+    })
+  }
+
+  mainWindow.once('ready-to-show', () => { mainWindow!.show() })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) shell.openExternal(url).catch(() => {})
+    else console.warn(`setWindowOpenHandler blocked: ${url}`)
+    return { action: 'deny' }
+  })
+
+  return mainWindow
+}
+
+export function openLoginWindow(loginUrl: string) {
+  if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.focus(); return }
+
+  loginWindow = new BrowserWindow({
+    width: 480, height: 680,
+    parent: mainWindow!,
+    modal: true,
+    resizable: false, minimizable: false, maximizable: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    backgroundColor: '#09090b',
+    title: 'MikuMod 登录',
+    autoHideMenuBar: true,
+  })
+
+  loginWindow.loadURL(loginUrl)
+
+  const handleAuthRedirect = (event: Electron.Event, url: string) => {
+    if (url.startsWith('mikumod://auth-callback')) {
+      event.preventDefault()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IpcChannels.deepLink, url)
+      }
+      loginWindow!.close()
+    }
+  }
+
+  loginWindow.webContents.on('will-navigate', handleAuthRedirect)
+  loginWindow.webContents.on('will-redirect', handleAuthRedirect)
+  loginWindow.on('closed', () => { loginWindow = null })
+}

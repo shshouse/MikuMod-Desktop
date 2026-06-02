@@ -1,11 +1,5 @@
 import net from 'net'
-import { app } from 'electron'
-import {
-  SUPPORTED_ACCELERATOR_DOMAINS,
-  WORKER_RELAY_DOMAINS,
-  GITHUB_WEB_DEPENDENCY_DOMAINS,
-} from './constants'
-import { loadEnvFiles } from '../env-loader'
+import { SUPPORTED_ACCELERATOR_DOMAINS } from './constants'
 
 export function isValidDomainName(domain: unknown): domain is string {
   if (typeof domain !== 'string') return false
@@ -59,29 +53,5 @@ export function normalizeEnabledDomains(domains: unknown): NormalizedDomain[] {
     result.push({ ...item, match_domain: domain, forward_ip: normalizeIP((item as EnabledDomainInput).forward_ip) })
     seen.add(domain)
   }
-  if (seen.has('github.com')) {
-    for (const domain of GITHUB_WEB_DEPENDENCY_DOMAINS) {
-      if (!seen.has(domain) && isSupportedAcceleratorDomain(domain)) {
-        result.push({ match_domain: domain, forward_ip: null })
-        seen.add(domain)
-      }
-    }
-  }
   return result
-}
-
-export function needsWorkerRelay(domain: string) {
-  if (WORKER_RELAY_DOMAINS.has(domain)) return true
-  for (const d of WORKER_RELAY_DOMAINS) {
-    if (domain.endsWith('.' + d)) return true
-  }
-  return false
-}
-
-export function getWorkerRelayConfig() {
-  loadEnvFiles({ app, keys: ['WORKER_RELAY_URL', 'WORKER_RELAY_SECRET'], override: true })
-  return {
-    url: process.env.WORKER_RELAY_URL?.trim() || '',
-    secret: process.env.WORKER_RELAY_SECRET?.trim() || '',
-  }
 }

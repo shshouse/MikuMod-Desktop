@@ -25,7 +25,7 @@ const topNavItems = [
   { id: "community", label: "社区", icon: MessageSquare },
   { id: "games", label: "游戏", icon: Gamepad2 },
   { id: "downloads", label: "下载", icon: Download },
-  { id: "accelerator", label: "加速", icon: Zap },
+  { id: "accelerator", label: "Steam", icon: Zap },
 ]
 
 export function Sidebar({ activeTab, onTabChange, installedGames = [] }: SidebarProps) {

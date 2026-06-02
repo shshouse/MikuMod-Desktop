@@ -25,9 +25,6 @@ import {
   getSystemProxyPacUrl,
   applySystemProxyPac,
   restoreSystemProxySettings,
-  applyGitProxyConfig,
-  restoreGitProxyConfig,
-  repairGitSchannelConfig,
   hasSystemProxyResidual,
   joinMessages,
 } from './system-proxy'
@@ -40,11 +37,6 @@ import {
   ensureSystemProxyServersReady,
 } from './proxy'
 import { loadCache, saveCache } from './utils'
-
-interface ActionResult {
-  changed: boolean
-  warning?: string
-}
 
 export function registerAcceleratorIPC() {
   ipcMain.handle('accelerator-status', () => ({
@@ -114,7 +106,6 @@ export function registerAcceleratorIPC() {
     return results
   })
 
-  // === 启动加速 ===
   ipcMain.handle('accelerator-start', async (_e, enabledDomains) => {
     if (acceleratorState.running) return { success: false, error: '\u52a0\u901f\u5df2\u5728\u8fd0\u884c' }
 
@@ -126,10 +117,6 @@ export function registerAcceleratorIPC() {
       const preCleanResult = removeHosts()
       if (!preCleanResult.success) return { success: false, error: `\u6e05\u7406\u6b8b\u7559 hosts \u5931\u8d25\uff1a${preCleanResult.error}` }
 
-      const hasGitHub = safeDomains.some(d => d.match_domain === 'github.com')
-      const gitRepair: ActionResult = hasGitHub ? await repairGitSchannelConfig() : { changed: false }
-
-      // 1. CA 证书
       const ca = loadOrCreateCA()
       const fingerprint = getCertFingerprint(ca.forgeCert)
       acceleratorState.caKey = ca.forgeKey
@@ -139,7 +126,6 @@ export function registerAcceleratorIPC() {
         acceleratorState.caFingerprint = fingerprint
       }
 
-      // 2. 安装到系统信任存储
       const certDir = ensureCertDir()
       const derPath = path.join(certDir, 'mikumod_ca.cer')
       fs.writeFileSync(derPath, certToDerBuffer(ca.forgeCert))
@@ -149,7 +135,6 @@ export function registerAcceleratorIPC() {
         return { success: false, error: 'CA \u8bc1\u4e66\u672a\u88ab\u7cfb\u7edf\u4fe1\u4efb\uff0c\u8bf7\u4ee5\u7ba1\u7406\u5458\u6743\u9650\u542f\u52a8\u5e76\u5141\u8bb8\u5b89\u88c5\u6839\u8bc1\u4e66' }
       }
 
-      // 3. DoH 解析
       const toResolve = safeDomains.filter(d => !d.forward_ip)
       const results: Record<string, string> = {}
       const candidateResults: Record<string, string[]> = {}
@@ -194,14 +179,11 @@ export function registerAcceleratorIPC() {
 
       let proxyMode: 'system' | 'hosts' = 'system'
       let proxyWarning = ''
-      let gitProxyResult: ActionResult = { changed: false }
       try {
         await ensureSystemProxyServersReady(ca.forgeCert)
         await applySystemProxyPac()
-        gitProxyResult = await applyGitProxyConfig(domainList)
       } catch (err: any) {
         await restoreSystemProxySettings().catch(() => {})
-        await restoreGitProxyConfig().catch(() => {})
         await stopSystemProxyServers()
         proxyMode = 'hosts'
         proxyWarning = `\u7cfb\u7edf PAC \u4ee3\u7406\u542f\u52a8\u5931\u8d25\uff0c\u5df2\u56de\u9000 hosts \u6a21\u5f0f\uff1a${err.message}`
@@ -227,12 +209,11 @@ export function registerAcceleratorIPC() {
         hostsMap,
         mode: proxyMode,
         pacUrl: proxyMode === 'system' ? getSystemProxyPacUrl() : undefined,
-        warning: joinMessages(gitRepair.warning, gitProxyResult.warning, proxyWarning),
+        warning: proxyWarning || undefined,
       }
     } catch (e: any) {
       removeHosts()
       await restoreSystemProxySettings().catch(() => {})
-      await restoreGitProxyConfig().catch(() => {})
       await stopSystemProxyServers()
       await stopProxyServer()
       resetRuntimeState()
@@ -241,11 +222,9 @@ export function registerAcceleratorIPC() {
     }
   })
 
-  // === 停止加速 ===
   ipcMain.handle('accelerator-stop', async () => {
     acceleratorState.hostsSelfHealPaused = true
-    const systemRestore: ActionResult = await restoreSystemProxySettings().catch((e: any) => ({ changed: false, warning: `\u7cfb\u7edf\u4ee3\u7406\u6062\u590d\u5931\u8d25\uff1a${e.message}` }))
-    const gitRestore: ActionResult = await restoreGitProxyConfig().catch((e: any) => ({ changed: false, warning: `Git \u4ee3\u7406\u6062\u590d\u5931\u8d25\uff1a${e.message}` }))
+    const systemRestore = await restoreSystemProxySettings().catch((e: any) => ({ changed: false, warning: `\u7cfb\u7edf\u4ee3\u7406\u6062\u590d\u5931\u8d25\uff1a${e.message}` }))
     const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
@@ -255,14 +234,12 @@ export function registerAcceleratorIPC() {
     await stopSystemProxyServers()
     resetRuntimeState({ preserveResolved: true })
     scheduleProxyWarmShutdown()
-    return { ...result, warning: joinMessages(systemRestore.warning, gitRestore.warning) }
+    return { ...result, warning: (systemRestore as { warning?: string }).warning || undefined }
   })
 
   ipcMain.handle('accelerator-repair', async () => {
     acceleratorState.hostsSelfHealPaused = true
-    const gitRepair: ActionResult = await repairGitSchannelConfig()
-    const systemRestore: ActionResult = await restoreSystemProxySettings().catch((e: any) => ({ changed: false, warning: `\u7cfb\u7edf\u4ee3\u7406\u6062\u590d\u5931\u8d25\uff1a${e.message}` }))
-    const gitRestore: ActionResult = await restoreGitProxyConfig().catch((e: any) => ({ changed: false, warning: `Git \u4ee3\u7406\u6062\u590d\u5931\u8d25\uff1a${e.message}` }))
+    const systemRestore = await restoreSystemProxySettings().catch((e: any) => ({ changed: false, warning: `\u7cfb\u7edf\u4ee3\u7406\u6062\u590d\u5931\u8d25\uff1a${e.message}` }))
     const result = removeHosts()
     if (!result.success) {
       acceleratorState.hostsSelfHealPaused = false
@@ -273,7 +250,7 @@ export function registerAcceleratorIPC() {
     await stopProxyServer()
     resetRuntimeState()
     await uninstallCATrust()
-    return { ...result, warning: joinMessages(gitRepair.warning, systemRestore.warning, gitRestore.warning) }
+    return { ...result, warning: (systemRestore as { warning?: string }).warning || undefined }
   })
 
   ipcMain.handle('accelerator-check-hosts', async () => containsMikuModEntries(readHostsFile()) || await hasSystemProxyResidual())
@@ -293,7 +270,6 @@ export async function cleanupOnExit() {
   acceleratorState.running = false
   try { removeHosts() } catch {}
   await restoreSystemProxySettings().catch(() => {})
-  await restoreGitProxyConfig().catch(() => {})
   await stopSystemProxyServers()
   await stopProxyServer()
   resetRuntimeState()

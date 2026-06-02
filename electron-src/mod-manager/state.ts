@@ -8,17 +8,21 @@ export function getAppBaseDir(app: Electron.App) {
   return app.isPackaged ? path.dirname(app.getPath('exe')) : path.resolve(__dirname, '..')
 }
 
-export function getGameDirs(app: Electron.App, gameName: string, modsRootDir?: string): GameDirs {
+export function getGameDirs(app: Electron.App, gameName: string, modsRootDir?: string, backupsRootDir?: string): GameDirs {
   const rootDir = path.resolve(modsRootDir || path.join(getAppBaseDir(app), 'mods'))
   const gameFolder = sanitizeSegment(gameName)
-  const gameDir = path.join(rootDir, gameFolder)
-  const systemDir = path.join(gameDir, '_system')
+  const gameDir = gameName === 'USER' ? path.join(rootDir, 'user') : rootDir
+  const systemDir = gameName === 'USER' ? path.join(gameDir, '_system') : path.join(rootDir, '_system', gameFolder)
+
+  const backupsRoot = path.resolve(backupsRootDir || path.join(getAppBaseDir(app), 'backups'))
+  const backupsDir = path.join(backupsRoot, gameFolder)
+
   return {
     rootDir,
     gameFolder,
     gameDir,
     systemDir,
-    backupsDir: path.join(systemDir, 'backups'),
+    backupsDir,
     tempDir: path.join(systemDir, 'temp'),
     statePath: path.join(systemDir, 'state.json'),
     stateBackupPath: path.join(systemDir, 'state.last-good.json'),
