@@ -1,4 +1,4 @@
-import { Download, Eye, Gamepad2, Loader2, ThumbsUp, User } from "lucide-react"
+import { Download, ExternalLink, Eye, Gamepad2, Loader2, ThumbsUp, User } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 
@@ -15,6 +15,7 @@ export interface ModCardMod {
   view_count?: number
   like_count?: number
   tags?: string[] | null
+  source_info?: { source_type?: string | null; source_url?: string | null } | null
 }
 
 interface ModCardProps {
@@ -108,9 +109,22 @@ export function ModCard({ mod, onDetail, onInstall, installing, className }: Mod
           ) : (
             <User className="w-4 h-4 text-muted-foreground" />
           )}
+          {mod.source_info?.source_type === 'repost' && (
+            <span className="text-xs text-muted-foreground/60">上传者</span>
+          )}
           <span className="text-sm text-muted-foreground">
             {mod.author?.username || "匿名"}
           </span>
+          {mod.source_info?.source_type === 'repost' && mod.source_info?.source_url && (
+            <span
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(mod.source_info!.source_url!, '_blank', 'noopener,noreferrer') }}
+              className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              title="转载自外部站点"
+            >
+              <ExternalLink className="w-3 h-3" />
+              转载
+            </span>
+          )}
         </div>
 
         {/* Install button (flex-grow spacer pushes bottom section down) */}
