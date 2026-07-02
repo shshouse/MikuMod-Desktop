@@ -133,8 +133,8 @@ function createProxyServer() {
       const upstreamSocket = tls.connect({
         host: realIP,
         port: 443,
-        servername: '',
-        rejectUnauthorized: false,
+        servername: domain,
+        rejectUnauthorized: true,
       }, () => {
         let requestHeader = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`
         for (let i = 0; i < req.rawHeaders.length; i += 2) {

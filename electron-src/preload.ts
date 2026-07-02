@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scanDirectory: (path: string) => ipcRenderer.invoke(IpcChannels.filesystem.scanDirectory, path),
   deleteFile: (path: string) => ipcRenderer.invoke(IpcChannels.filesystem.deleteFile, path),
   scanSteamGames: () => ipcRenderer.invoke(IpcChannels.steam.scan),
+  detectEndfield: () => ipcRenderer.invoke(IpcChannels.gameDetect.endfield),
 
   // 嵌入式登录窗口
   openLoginWindow: (url: string) => ipcRenderer.invoke(IpcChannels.login.open, url),
@@ -102,6 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   xxmiGetModsDir: (miName: string) => ipcRenderer.invoke(IpcChannels.xxmi.getModsDir, miName),
   xxmiGetAllModsDirs: () => ipcRenderer.invoke(IpcChannels.xxmi.getAllModsDirs),
   xxmiUninstall: () => ipcRenderer.invoke(IpcChannels.xxmi.uninstall),
+  xxmiCreateShortcut: (gameName: string, miName: string, gameExePath: string) => ipcRenderer.invoke(IpcChannels.xxmi.createShortcut, gameName, miName, gameExePath),
 
   // 加速器
   acceleratorStatus: () => ipcRenderer.invoke('accelerator-status'),

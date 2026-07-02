@@ -2,6 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import fsPromises from 'fs/promises'
 import { spawn, ChildProcess } from 'child_process'
+import { shell } from 'electron'
 import { getAppBaseDir } from '../mod-manager/state'
 import { ensureDir, pathExists, copyFileSafe, copyDirectoryContents, removePath, extractArchive, resolveContentRoot, createId } from '../mod-manager/utils'
 import {
@@ -17,6 +18,7 @@ import {
   type XxmiLaunchResult,
   type XxmiMiStatus,
   type XxmiGameBinding,
+  type XxmiShortcutResult,
 } from './launcher-types'
 
 // --- 路径计算 ---
@@ -348,4 +350,43 @@ export async function uninstallXxmiFramework(app: Electron.App): Promise<void> {
   await removePath(xxmiDir)
   const bindingsPath = getBindingsPath(app)
   await fsPromises.unlink(bindingsPath).catch(() => {})
+}
+
+export async function createGameShortcut(
+  app: Electron.App,
+  gameName: string,
+  miName: XxmiRuntimeName,
+  gameExePath: string,
+): Promise<XxmiShortcutResult> {
+  const launcherPath = getLauncherExe(app)
+  if (!(await pathExists(launcherPath))) {
+    return { success: false, shortcutPath: null, error: 'XXMI Launcher 未安装' }
+  }
+
+  const miDir = getMiDir(app, miName)
+  if (!fs.existsSync(path.join(miDir, 'd3d11.dll'))) {
+    return { success: false, shortcutPath: null, error: `${miName} 未安装` }
+  }
+
+  // 桌面路径
+  const desktopPath = app.getPath('desktop')
+  const shortcutName = `${gameName} (XXMI).lnk`
+  const shortcutPath = path.join(desktopPath, shortcutName)
+
+  // 启动参数
+  const args = `--nogui --xxmi ${miName} "${gameExePath}"`
+
+  try {
+    shell.writeShortcutLink(shortcutPath, {
+      target: launcherPath,
+      args: args,
+      workingDir: miDir,
+      icon: gameExePath,
+      iconIndex: 0,
+      description: `Launch ${gameName} with XXMI ${miName}`,
+    })
+    return { success: true, shortcutPath }
+  } catch (error: any) {
+    return { success: false, shortcutPath: null, error: error.message || '创建快捷方式失败' }
+  }
 }

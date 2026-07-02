@@ -41,6 +41,7 @@ export interface ElectronAPI {
   scanDirectory: (path: string) => Promise<string[]>
   deleteFile: (path: string) => Promise<void>
   scanSteamGames: () => Promise<Array<{ appId: string; name: string; installPath: string }>>
+  detectEndfield: () => Promise<Array<{ gameId: string; name: string; installPath: string; exePath: string }>>
   openLoginWindow: (url: string) => Promise<void>
 
   updaterCheck: () => Promise<{ available: boolean; info?: UpdaterInfo; reason?: string }>
@@ -88,6 +89,17 @@ export interface ElectronAPI {
   acceleratorCheckHosts: () => Promise<boolean>
   acceleratorPing: (ip: string) => Promise<number | null>
   acceleratorPingBoth: (domain: string, ip: string) => Promise<{ before: number | null, after: number | null }>
+
+  // XXMI Launcher
+  xxmiImportPackage: (zipPath: string) => Promise<{ success: boolean; launcherPath: string | null; version: string | null; importedMiNames: string[]; error?: string }>
+  xxmiGetFrameworkInfo: () => Promise<{ installed: boolean; version: string | null; launcherExe: string | null; frameworksDir: string; miStatuses: Array<{ runtimeName: string; gameName: string; installed: boolean; modsCount: number; modsDir: string | null }> }>
+  xxmiBindGame: (gameName: string, miName: string, gameExePath: string) => Promise<void>
+  xxmiGetBinding: (gameName: string) => Promise<{ gameName: string; miName: string; gameExePath: string; gameRootDir: string } | null>
+  xxmiLaunchGame: (gameName: string, gameExePath: string) => Promise<{ success: boolean; processId?: number; error?: string }>
+  xxmiGetModsDir: (miName: string) => Promise<string | null>
+  xxmiGetAllModsDirs: () => Promise<Record<string, string | null>>
+  xxmiUninstall: () => Promise<{ ok: boolean }>
+  xxmiCreateShortcut: (gameName: string, miName: string, gameExePath: string) => Promise<{ success: boolean; shortcutPath: string | null; error?: string }>
 }
 
 declare global {

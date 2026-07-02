@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import https from 'https'
+import { execFileSync } from 'child_process'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const forge = require('node-forge')
 import { app } from 'electron'
@@ -83,6 +84,12 @@ function isCAKeyPairValid(forgeCert: ForgeCert, forgeKey: any) {
   }
 }
 
+function protectFile(filePath: string) {
+  try {
+    execFileSync('icacls', [filePath, '/inheritance:r', '/grant:r', `${process.env.USERNAME}:F`], { windowsHide: true })
+  } catch {}
+}
+
 export function loadOrCreateCA() {
   const dir = ensureCertDir()
   const certPath = path.join(dir, CA_CERT_FILE)
@@ -95,6 +102,7 @@ export function loadOrCreateCA() {
       const forgeCert = forge.pki.certificateFromPem(certPem)
       const forgeKey = forge.pki.privateKeyFromPem(keyPem)
       if (new Date() < forgeCert.validity.notAfter && isCAKeyPairValid(forgeCert, forgeKey)) {
+        protectFile(keyPath)
         return { key: keyPem, cert: certPem, forgeKey, forgeCert }
       }
     } catch {}
@@ -103,6 +111,8 @@ export function loadOrCreateCA() {
   const ca = generateRootCA()
   fs.writeFileSync(certPath, ca.cert, 'utf-8')
   fs.writeFileSync(keyPath, ca.key, 'utf-8')
+  protectFile(keyPath)
+  protectFile(certPath)
   return ca
 }
 

@@ -85,9 +85,14 @@ function getSafeBaseDirs() {
   ]
 }
 
+const PROTECTED_PATHS = [
+  path.join(app.getPath('userData'), 'certs'),
+]
+
 export function isPathAllowed(targetPath: string | undefined) {
   if (typeof targetPath !== 'string' || !targetPath.trim()) return false
   const normalized = path.normalize(path.resolve(targetPath))
+  if (PROTECTED_PATHS.some(p => normalized.startsWith(p + path.sep) || normalized === p)) return false
   const baseDirs = getSafeBaseDirs()
   return baseDirs.some(base => normalized.startsWith(base + path.sep) || normalized === base)
 }

@@ -14,10 +14,24 @@ export function registerFilesystemIPC() {
   ipcMain.handle(IpcChannels.filesystem.getAppModsDir, () => paths.modsDir)
   ipcMain.handle(IpcChannels.filesystem.getAppBackupsDir, () => paths.backupsDir)
 
+  const BLOCKED_DIR_PREFIXES = [
+    'C:\\Windows',
+    'C:\\Program Files',
+    'C:\\Program Files (x86)',
+    'C:\\ProgramData',
+    'C:\\$Recycle.Bin',
+    'C:\\System Volume Information',
+  ]
+
   ipcMain.handle(IpcChannels.filesystem.authorizeDirectory, async (_e, dirPath: string) => {
     try {
       const normalized = normalizeBaseDir(dirPath)
       if (!normalized) return false
+      const lower = normalized.toLowerCase()
+      if (BLOCKED_DIR_PREFIXES.some(p => lower.startsWith(p.toLowerCase()))) {
+        console.warn(`authorize-directory blocked (system path): ${normalized}`)
+        return false
+      }
       const stat = await fsPromises.stat(normalized)
       if (!stat.isDirectory()) return false
       authorizeBaseDir(normalized)

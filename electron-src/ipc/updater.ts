@@ -31,7 +31,7 @@ export function initAutoUpdater() {
   if (!autoUpdater) return
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
-  autoUpdater.allowDowngrade = true
+  autoUpdater.allowDowngrade = false
   autoUpdater.channel = readChannel()
 
   const sendEvent = (payload: any) => {

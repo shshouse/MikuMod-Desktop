@@ -77,3 +77,9 @@ export interface XxmiGameBinding {
   gameExePath: string
   gameRootDir: string
 }
+
+export interface XxmiShortcutResult {
+  success: boolean
+  shortcutPath: string | null
+  error?: string
+}

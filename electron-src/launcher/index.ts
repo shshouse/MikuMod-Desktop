@@ -9,6 +9,7 @@ export {
   getXxmiMiModsDir,
   getAllXxmiMiModsDirs,
   uninstallXxmiFramework,
+  createGameShortcut,
 } from './xxmi-launcher'
 export type {
   XxmiRuntimeName,
@@ -17,4 +18,5 @@ export type {
   XxmiLaunchResult,
   XxmiMiStatus,
   XxmiGameBinding,
+  XxmiShortcutResult,
 } from './launcher-types'

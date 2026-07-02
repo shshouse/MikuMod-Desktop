@@ -54,7 +54,7 @@ function createUpstreamOptions(clientReq: http.IncomingMessage, domain: string, 
     method: clientReq.method,
     headers,
     servername,
-    rejectUnauthorized: false,
+    rejectUnauthorized: true,
     timeout: UPSTREAM_TIMEOUT_MS,
     agent: acceleratorState.keepAliveAgent || undefined,
   }

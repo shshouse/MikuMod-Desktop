@@ -1,13 +1,28 @@
 import path from 'path'
+import crypto from 'crypto'
 import { BrowserWindow, shell } from 'electron'
 import { writeMainLog } from './logger'
-import { isAllowedExternalUrl } from './security'
+import { isAllowedExternalUrl, isAllowedHttpDomain } from './security'
 import { IpcChannels } from '@shared/ipc-channels'
 
 let mainWindow: BrowserWindow | null = null
 let loginWindow: BrowserWindow | null = null
 
+const pendingAuthStates = new Set<string>()
+
 export function getMainWindow() { return mainWindow }
+
+export function consumeAuthState(url: string): boolean {
+  try {
+    const urlObj = new URL(url)
+    if (!urlObj.pathname.startsWith('//auth-callback') && !urlObj.pathname.includes('auth-callback')) return false
+    const state = urlObj.searchParams.get('state')
+    if (!state) return false
+    if (!pendingAuthStates.has(state)) return false
+    pendingAuthStates.delete(state)
+    return true
+  } catch { return false }
+}
 
 function attachWindowDiagnostics(win: BrowserWindow) {
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -74,6 +89,16 @@ export function createMainWindow() {
 
 export function openLoginWindow(loginUrl: string) {
   if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.focus(); return }
+  if (!isAllowedExternalUrl(loginUrl) && !isAllowedHttpDomain(loginUrl)) {
+    writeMainLog(`[Window] openLoginWindow blocked: ${loginUrl}`)
+    return
+  }
+
+  const state = crypto.randomBytes(16).toString('hex')
+  pendingAuthStates.add(state)
+  const urlWithState = new URL(loginUrl)
+  urlWithState.searchParams.set('desktop_state', state)
+  const finalUrl = urlWithState.toString()
 
   loginWindow = new BrowserWindow({
     width: 480, height: 680,
@@ -86,13 +111,15 @@ export function openLoginWindow(loginUrl: string) {
     autoHideMenuBar: true,
   })
 
-  loginWindow.loadURL(loginUrl)
+  loginWindow.loadURL(finalUrl)
 
   const handleAuthRedirect = (event: Electron.Event, url: string) => {
     if (url.startsWith('mikumod://auth-callback')) {
       event.preventDefault()
-      if (mainWindow && !mainWindow.isDestroyed()) {
+      if (consumeAuthState(url) && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(IpcChannels.deepLink, url)
+      } else {
+        writeMainLog(`[Window] auth-callback rejected: invalid or missing state`)
       }
       loginWindow!.close()
     }

@@ -48,6 +48,7 @@ export const IpcChannels = {
     getModsDir: 'xxmi-get-mods-dir',
     getAllModsDirs: 'xxmi-get-all-mods-dirs',
     uninstall: 'xxmi-uninstall',
+    createShortcut: 'xxmi-create-shortcut',
   },
   updater: {
     check: 'updater-check',
@@ -62,6 +63,9 @@ export const IpcChannels = {
   },
   steam: {
     scan: 'scan-steam-games',
+  },
+  gameDetect: {
+    endfield: 'detect-endfield',
   },
   deepLink: 'deep-link',
   appVersion: 'get-app-version',

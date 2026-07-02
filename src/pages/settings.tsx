@@ -1,10 +1,40 @@
-import { Download, Loader2, LogOut, RefreshCcw, Sparkles } from "lucide-react"
-import { useEffect, useState } from "react"
+import { Download, ExternalLink, FolderOpen, Loader2, LogOut, Play, RefreshCcw, Sparkles, Trash2 } from "lucide-react"
+import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import type { ElectronAPI } from "@/types/electron"
 import { signOutDesktop } from "@/lib/supabase"
 import { showToast } from "@/lib/toast"
 import { useDownloadStore } from "@/store/download"
+
+type XxmiFrameworkInfo = {
+  installed: boolean
+  version: string | null
+  launcherExe: string | null
+  frameworksDir: string
+  miStatuses: Array<{
+    runtimeName: string
+    gameName: string
+    installed: boolean
+    modsCount: number
+    modsDir: string | null
+  }>
+}
+
+type XxmiGameBinding = {
+  gameName: string
+  miName: string
+  gameExePath: string
+  gameRootDir: string
+}
+
+const MI_LABELS: Record<string, { label: string; game: string }> = {
+  GIMI: { label: 'GIMI', game: 'Genshin Impact' },
+  SRMI: { label: 'SRMI', game: 'Honkai: Star Rail' },
+  WWMI: { label: 'WWMI', game: 'Wuthering Waves' },
+  ZZMI: { label: 'ZZMI', game: 'Zenless Zone Zero' },
+  EFMI: { label: 'EFMI', game: 'Endfield' },
+  HIMI: { label: 'HIMI', game: 'Honkai Impact 3rd' },
+}
 
 interface SettingsPageProps {
   onNavigate: (tab: string) => void
@@ -20,9 +50,40 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [updateProgress, setUpdateProgress] = useState(0)
   const [updateError, setUpdateError] = useState("")
 
+  // XXMI state
+  const [xxmiInfo, setXxmiInfo] = useState<XxmiFrameworkInfo | null>(null)
+  const [xxmiLoading, setXxmiLoading] = useState(false)
+  const [xxmiBindings, setXxmiBindings] = useState<Record<string, XxmiGameBinding>>({})
+  const [xxmiUninstallConfirm, setXxmiUninstallConfirm] = useState(false)
+
+  const refreshXxmiInfo = useCallback(async () => {
+    if (!window.electronAPI?.xxmiGetFrameworkInfo) return
+    setXxmiLoading(true)
+    try {
+      const info = await window.electronAPI.xxmiGetFrameworkInfo()
+      setXxmiInfo(info)
+      // Load bindings for each game
+      const bindings: Record<string, XxmiGameBinding> = {}
+      for (const mi of info.miStatuses) {
+        if (mi.installed) {
+          const binding = await window.electronAPI.xxmiGetBinding?.(mi.gameName)
+          if (binding) bindings[mi.gameName] = binding
+        }
+      }
+      setXxmiBindings(bindings)
+    } catch (e) {
+      console.error('Failed to get XXMI info:', e)
+    } finally {
+      setXxmiLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     // Get app version
     window.electronAPI?.getAppVersion?.().then((v) => setAppVersion(v || "dev")).catch(() => setAppVersion("dev"))
+
+    // Load XXMI info
+    refreshXxmiInfo()
 
     // Listen for updater events
     window.electronAPI?.onUpdaterEvent?.((data) => {
@@ -161,6 +222,141 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* XXMI Launcher card */}
+        <div className="rounded-2xl bg-card overflow-hidden">
+          <div className="px-4 py-3 flex items-center gap-2 border-b border-border/50">
+            <Play className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-medium">XXMI Launcher</h3>
+            {xxmiInfo?.version && <span className="text-xs text-muted-foreground ml-2">v{xxmiInfo.version}</span>}
+          </div>
+          <div className="p-4 space-y-4">
+            {xxmiLoading && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {!xxmiLoading && !xxmiInfo?.installed && (
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground mb-3">尚未导入 XXMI Launcher</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-2 rounded-lg"
+                  onClick={async () => {
+                    const zipPath = await window.electronAPI?.selectModFile?.()
+                    if (!zipPath) return
+                    setXxmiLoading(true)
+                    try {
+                      const result = await window.electronAPI?.xxmiImportPackage?.(zipPath)
+                      if (result?.success) {
+                        showToast({ message: `XXMI ${result.version ?? ''} 导入成功`, type: 'success' })
+                        await refreshXxmiInfo()
+                      } else {
+                        showToast({ message: result?.error || '导入失败', type: 'error' })
+                      }
+                    } catch (e: any) {
+                      showToast({ message: e.message || '导入失败', type: 'error' })
+                    } finally {
+                      setXxmiLoading(false)
+                    }
+                  }}
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  导入 XXMI 便携包
+                </Button>
+              </div>
+            )}
+            {!xxmiLoading && xxmiInfo?.installed && (
+              <>
+                <div className="space-y-2">
+                  {xxmiInfo.miStatuses.filter(mi => mi.installed).map(mi => {
+                    const binding = xxmiBindings[mi.gameName]
+                    return (
+                      <div key={mi.runtimeName} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50">
+                        <div>
+                          <p className="text-sm font-medium">{MI_LABELS[mi.runtimeName]?.game || mi.gameName}</p>
+                          <p className="text-xs text-muted-foreground">{mi.modsCount} Mods</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {binding && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1.5 rounded-lg text-xs"
+                              onClick={async () => {
+                                const result = await window.electronAPI?.xxmiCreateShortcut?.(mi.gameName, mi.runtimeName, binding.gameExePath)
+                                if (result?.success) {
+                                  showToast({ message: `快捷方式已创建`, type: 'success' })
+                                } else {
+                                  showToast({ message: result?.error || '创建失败', type: 'error' })
+                                }
+                              }}
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              创建快捷方式
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1.5 rounded-lg text-xs"
+                            onClick={async () => {
+                              if (!binding) {
+                                const gameExe = await window.electronAPI?.selectModFile?.()
+                                if (!gameExe) return
+                                await window.electronAPI?.xxmiBindGame?.(mi.gameName, mi.runtimeName, gameExe)
+                                await refreshXxmiInfo()
+                                showToast({ message: '游戏已绑定', type: 'success' })
+                              } else {
+                                const result = await window.electronAPI?.xxmiLaunchGame?.(mi.gameName, binding.gameExePath)
+                                if (result?.success) {
+                                  showToast({ message: '游戏已启动', type: 'success' })
+                                } else {
+                                  showToast({ message: result?.error || '启动失败', type: 'error' })
+                                }
+                              }
+                            }}
+                          >
+                            <Play className="w-3 h-3" />
+                            {binding ? '启动' : '绑定游戏'}
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="pt-2 border-t border-border/50">
+                  <Button
+                    variant={xxmiUninstallConfirm ? "destructive" : "outline"}
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-lg text-xs"
+                    onClick={async () => {
+                      if (!xxmiUninstallConfirm) {
+                        setXxmiUninstallConfirm(true)
+                        return
+                      }
+                      setXxmiLoading(true)
+                      try {
+                        await window.electronAPI?.xxmiUninstall?.()
+                        showToast({ message: 'XXMI 已卸载', type: 'success' })
+                        setXxmiUninstallConfirm(false)
+                        await refreshXxmiInfo()
+                      } catch (e: any) {
+                        showToast({ message: e.message || '卸载失败', type: 'error' })
+                      } finally {
+                        setXxmiLoading(false)
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    {xxmiUninstallConfirm ? '确认卸载?' : '卸载 XXMI'}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

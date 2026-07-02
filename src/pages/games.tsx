@@ -112,28 +112,45 @@ export function GamesPage({
     setIsScanning(true)
     setScanResult(null)
     try {
-      const steamGames = await window.electronAPI.scanSteamGames()
-      if (!steamGames?.length) {
-        setScanResult("未检测到 Steam 安装或游戏")
-        return
-      }
-      const steamMap = new Map<string, string>()
-      for (const sg of steamGames) steamMap.set(sg.appId, sg.installPath)
       const nextPaths = { ...localPaths }
       const matched: string[] = []
-      for (const game of games) {
-        if (!game.steam_app_id || nextPaths[game.id]) continue
-        const installPath = steamMap.get(game.steam_app_id)
-        if (installPath) {
-          nextPaths[game.id] = installPath
-          matched.push(game.name)
+
+      // Steam 检测
+      const steamGames = await window.electronAPI.scanSteamGames()
+      if (steamGames?.length) {
+        const steamMap = new Map<string, string>()
+        for (const sg of steamGames) steamMap.set(sg.appId, sg.installPath)
+        for (const game of games) {
+          if (!game.steam_app_id || nextPaths[game.id]) continue
+          const installPath = steamMap.get(game.steam_app_id)
+          if (installPath) {
+            nextPaths[game.id] = installPath
+            matched.push(game.name)
+          }
         }
       }
+
+      // 终末地检测(EFMI,非 Steam 渠道)
+      if (window.electronAPI?.detectEndfield) {
+        const endfield = await window.electronAPI.detectEndfield()
+        if (endfield?.length) {
+          const ENDFIELD_NAME_KEYS = ["endfield", "终末地"]
+          for (const game of games) {
+            if (nextPaths[game.id]) continue
+            const nameLower = (game.name || "").toLowerCase()
+            if (!ENDFIELD_NAME_KEYS.some((k) => nameLower.includes(k.toLowerCase()))) continue
+            nextPaths[game.id] = endfield[0].installPath
+            matched.push(game.name)
+            break
+          }
+        }
+      }
+
       if (matched.length > 0) {
         persistPaths(nextPaths)
         setScanResult(`已检测到 ${matched.length} 个游戏：${matched.join("、")}`)
       } else {
-        setScanResult(`扫描到 ${steamGames.length} 个 Steam 游戏，但未匹配到平台支持游戏`)
+        setScanResult("未检测到任何已安装的支持游戏")
       }
     } catch (err) {
       console.error("Auto-detect failed:", err)

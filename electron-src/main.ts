@@ -4,14 +4,15 @@ import { loadEnvFiles } from './env-loader'
 import { initializeDesktopPaths, getDesktopPaths } from './core/paths'
 import { loadAuthorizedBaseDirs, isPathAllowed, isAllowedHttpDomain } from './core/security'
 import { getRequestIdFromHeaders, newRequestId, writeStructuredLog } from './core/logger'
-import { createMainWindow, getMainWindow, openLoginWindow } from './core/window'
+import { createMainWindow, getMainWindow, openLoginWindow, consumeAuthState } from './core/window'
 import { registerAcceleratorIPC, cleanupOnExit } from './accelerator/ipc'
 import { registerFilesystemIPC } from './ipc/filesystem'
 import { registerDownloadIPC, setupDownloadSessionHandlers } from './ipc/download'
 import { registerSteamIPC } from './ipc/steam'
+import { registerGameDetectIPC } from './ipc/game-detect'
 import { initAutoUpdater, registerUpdaterIPC } from './ipc/updater'
 import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod } from './mod-manager'
-import { importXxmiPackage, getXxmiFrameworkInfo, bindGameToMi, getGameBinding, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework } from './launcher'
+import { importXxmiPackage, getXxmiFrameworkInfo, bindGameToMi, getGameBinding, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework, createGameShortcut } from './launcher'
 import { IpcChannels } from '@shared/ipc-channels'
 
 // --- 初始化 ---
@@ -45,6 +46,7 @@ function registerWindowControlIPC() {
 // --- HTTP 代理 IPC ---
 
 function registerHttpRequestIPC() {
+  const BLOCKED_HEADERS = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-secret'])
   ipcMain.handle(IpcChannels.http.request, async (_e, url: string, options: any = {}) => {
     const requestId = getRequestIdFromHeaders(options?.headers) || newRequestId()
     try {
@@ -53,7 +55,12 @@ function registerHttpRequestIPC() {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs)
 
-      requestOptions.headers = { ...(requestOptions.headers || {}), 'x-request-id': requestId }
+      const userHeaders = { ...(requestOptions.headers || {}) }
+      for (const key of Object.keys(userHeaders)) {
+        if (BLOCKED_HEADERS.has(key.toLowerCase())) delete userHeaders[key]
+      }
+      userHeaders['x-request-id'] = requestId
+      requestOptions.headers = userHeaders
 
       if (!isAllowedHttpDomain(url)) {
         writeStructuredLog('warn', 'http-request blocked', { request_id: requestId, code: 'HTTP-MAIN-1001', url })
@@ -197,6 +204,15 @@ function registerXxmiIPC() {
       throw new Error(error.message || '卸载失败')
     }
   })
+
+  ipcMain.handle(IpcChannels.xxmi.createShortcut, async (_e, gameName: string, miName: string, gameExePath: string) => {
+    try {
+      return await createGameShortcut(app, gameName, miName as any, gameExePath)
+    } catch (error: any) {
+      console.error('xxmi-create-shortcut error:', error)
+      throw new Error(error.message || '创建快捷方式失败')
+    }
+  })
 }
 
 // --- 登录窗口 IPC ---
@@ -217,6 +233,7 @@ app.whenReady().then(() => {
   registerFilesystemIPC()
   registerDownloadIPC()
   registerSteamIPC()
+  registerGameDetectIPC()
   registerUpdaterIPC()
   registerModManagerIPC()
   registerLoginIPC()
@@ -228,6 +245,12 @@ app.whenReady().then(() => {
   const deepLinkArg = process.argv.find(arg => arg.startsWith('mikumod://'))
   if (deepLinkArg && win) {
     win.webContents.once('did-finish-load', () => {
+      if (deepLinkArg.startsWith('mikumod://auth-callback')) {
+        if (!consumeAuthState(deepLinkArg)) {
+          writeStructuredLog('warn', 'deep-link auth-callback rejected: invalid state', { url: deepLinkArg })
+          return
+        }
+      }
       win.webContents.send(IpcChannels.deepLink, deepLinkArg)
     })
   }
@@ -247,7 +270,15 @@ app.on('second-instance', (_event, argv) => {
       if (win.isMinimized()) win.restore()
       win.focus()
       const deepLinkUrl = argv.find(arg => arg.startsWith('mikumod://'))
-      if (deepLinkUrl) win.webContents.send(IpcChannels.deepLink, deepLinkUrl)
+      if (deepLinkUrl) {
+        if (deepLinkUrl.startsWith('mikumod://auth-callback')) {
+          if (!consumeAuthState(deepLinkUrl)) {
+            writeStructuredLog('warn', 'second-instance auth-callback rejected: invalid state', { url: deepLinkUrl })
+            return
+          }
+        }
+        win.webContents.send(IpcChannels.deepLink, deepLinkUrl)
+      }
     } catch {}
   }
 })

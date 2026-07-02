@@ -91,7 +91,8 @@ function attachDownloadItem(item: DownloadItem, request: DownloadRequest) {
   if (request.kind === 'start') {
     const downloadDir = request.saveDir || path.join(app.getPath('downloads'), 'MikuMod')
     if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true })
-    item.setSavePath(path.join(downloadDir, request.fileName || item.getFilename()))
+    const safeFileName = path.basename(request.fileName || item.getFilename())
+    item.setSavePath(path.join(downloadDir, safeFileName))
   }
 
   activeDownloads.set(request.downloadId, item)
