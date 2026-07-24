@@ -1,12 +1,16 @@
+export interface MultiDownloadSegment {
+  start: number
+  end: number
+  received: number
+}
+
 export interface DownloadResumeData {
+  version: 2
   path: string
-  urlChain: string[]
-  mimeType?: string
-  offset: number
-  length: number
-  lastModified?: string
-  eTag?: string
-  startTime?: number
+  partPath: string
+  url: string
+  totalLength: number
+  segments: MultiDownloadSegment[]
 }
 
 export interface DownloadEvent {

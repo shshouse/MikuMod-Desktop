@@ -38,6 +38,7 @@ export const IpcChannels = {
     importDownload: 'managed-mods-import-download',
     install: 'managed-mods-install',
     uninstall: 'managed-mods-uninstall',
+    delete: 'managed-mods-delete',
   },
   xxmi: {
     importPackage: 'xxmi-import-package',

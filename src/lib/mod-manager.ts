@@ -42,6 +42,7 @@ export interface ImportDownloadedModInput {
   downloadId?: string
   fileName?: string
   archiveFileName?: string
+  versionString?: string
 }
 
 export interface InstallManagedModInput {
@@ -73,6 +74,17 @@ export interface UninstallManagedModResult {
   mod?: ManagedModSummary
 }
 
+export interface DeleteManagedModInput {
+  gameId: string
+  gameName: string
+  modId: string
+}
+
+export interface DeleteManagedModResult {
+  ok: boolean
+  error?: string
+}
+
 export async function listManagedMods(gameId: string, gameName: string) {
   return window.electronAPI.listManagedMods({ gameId, gameName })
 }
@@ -91,4 +103,8 @@ export async function installManagedMod(input: InstallManagedModInput) {
 
 export async function uninstallManagedMod(input: UninstallManagedModInput) {
   return window.electronAPI.uninstallManagedMod(input)
+}
+
+export async function deleteManagedMod(input: DeleteManagedModInput) {
+  return window.electronAPI.deleteManagedMod(input)
 }

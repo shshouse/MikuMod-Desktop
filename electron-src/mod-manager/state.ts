@@ -11,8 +11,9 @@ export function getAppBaseDir(app: Electron.App) {
 export function getGameDirs(app: Electron.App, gameName: string, modsRootDir?: string, backupsRootDir?: string): GameDirs {
   const rootDir = path.resolve(modsRootDir || path.join(getAppBaseDir(app), 'mods'))
   const gameFolder = sanitizeSegment(gameName)
-  const gameDir = gameName === 'USER' ? path.join(rootDir, 'user') : rootDir
-  const systemDir = gameName === 'USER' ? path.join(gameDir, '_system') : path.join(rootDir, '_system', gameFolder)
+  // ponytail: 非 USER 游戏的 mod 统一进 mods/<gameFolder>/, 不再散落 mods/ 根
+  const gameDir = gameName === 'USER' ? path.join(rootDir, 'user') : path.join(rootDir, gameFolder)
+  const systemDir = gameName === 'USER' ? path.join(gameDir, '_system') : path.join(gameDir, '_system')
 
   const backupsRoot = path.resolve(backupsRootDir || path.join(getAppBaseDir(app), 'backups'))
   const backupsDir = path.join(backupsRoot, gameFolder)

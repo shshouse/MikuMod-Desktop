@@ -6,10 +6,13 @@ import type {
   ManagedModSummary,
   UninstallManagedModInput,
   UninstallManagedModResult,
+  DeleteManagedModInput,
+  DeleteManagedModResult,
 } from "@/lib/mod-manager"
 
 import type {
   DownloadResumeData,
+  MultiDownloadSegment,
   AcceleratorProxyMode,
   UpdaterInfo,
   UpdaterProgress,
@@ -18,6 +21,7 @@ import type {
 
 export type {
   DownloadResumeData,
+  MultiDownloadSegment,
   AcceleratorProxyMode,
   UpdaterInfo,
   UpdaterProgress,
@@ -77,6 +81,7 @@ export interface ElectronAPI {
   importDownloadedMod: (input: ImportDownloadedModInput) => Promise<ManagedModSummary>
   installManagedMod: (input: InstallManagedModInput) => Promise<InstallManagedModResult>
   uninstallManagedMod: (input: UninstallManagedModInput) => Promise<UninstallManagedModResult>
+  deleteManagedMod: (input: DeleteManagedModInput) => Promise<DeleteManagedModResult>
 
   acceleratorStatus: () => Promise<{ running: boolean; resolved: Record<string, string>; activeDomains?: string[]; mode?: AcceleratorProxyMode; pacUrl?: string | null }>
   acceleratorSetDomains: (domains: unknown[]) => Promise<{ success: boolean }>

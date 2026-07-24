@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importDownloadedMod: (input: unknown) => ipcRenderer.invoke(IpcChannels.modManager.importDownload, input),
   installManagedMod: (input: unknown) => ipcRenderer.invoke(IpcChannels.modManager.install, input),
   uninstallManagedMod: (input: unknown) => ipcRenderer.invoke(IpcChannels.modManager.uninstall, input),
+  deleteManagedMod: (input: unknown) => ipcRenderer.invoke(IpcChannels.modManager.delete, input),
 
   // XXMI Launcher
   xxmiImportPackage: (zipPath: string) => ipcRenderer.invoke(IpcChannels.xxmi.importPackage, zipPath),

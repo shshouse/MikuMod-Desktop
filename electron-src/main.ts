@@ -7,11 +7,11 @@ import { getRequestIdFromHeaders, newRequestId, writeStructuredLog } from './cor
 import { createMainWindow, getMainWindow, openLoginWindow, consumeAuthState } from './core/window'
 import { registerAcceleratorIPC, cleanupOnExit } from './accelerator/ipc'
 import { registerFilesystemIPC } from './ipc/filesystem'
-import { registerDownloadIPC, setupDownloadSessionHandlers } from './ipc/download'
+import { registerDownloadIPC } from './ipc/download'
 import { registerSteamIPC } from './ipc/steam'
 import { registerGameDetectIPC } from './ipc/game-detect'
 import { initAutoUpdater, registerUpdaterIPC } from './ipc/updater'
-import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod } from './mod-manager'
+import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod, deleteManagedMod } from './mod-manager'
 import { importXxmiPackage, getXxmiFrameworkInfo, bindGameToMi, getGameBinding, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework, createGameShortcut } from './launcher'
 import { IpcChannels } from '@shared/ipc-channels'
 
@@ -124,6 +124,15 @@ function registerModManagerIPC() {
     } catch (error: any) {
       console.error('managed-mods-uninstall error:', error)
       return { ok: false, error: error.message || '卸载失败', restoredPaths: 0 }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.modManager.delete, async (_e, input) => {
+    try {
+      return await deleteManagedMod(app, input, desktopPaths.modsDir, desktopPaths.backupsDir)
+    } catch (error: any) {
+      console.error('managed-mods-delete error:', error)
+      return { ok: false, error: error.message || '删除失败' }
     }
   })
 }
@@ -240,7 +249,6 @@ app.whenReady().then(() => {
   registerXxmiIPC()
 
   const win = createMainWindow()
-  setupDownloadSessionHandlers(win)
 
   const deepLinkArg = process.argv.find(arg => arg.startsWith('mikumod://'))
   if (deepLinkArg && win) {
@@ -257,8 +265,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      const newWin = createMainWindow()
-      setupDownloadSessionHandlers(newWin)
+      createMainWindow()
     }
   })
 })

@@ -31,6 +31,9 @@ export interface ModRecord {
   platformVersionId: string | null
   modNumber: string | null
   lastGamePath: string | null
+  // ponytail: 二游 mod 走 XXMI 安装策略时, 记录实际落地目录 (<xxmiDir>/<miName>/Mods/<modName>/)
+  // 用于卸载时定位; overlay 策略不用此字段 (走 owners 栈)
+  miTargetDir: string | null
 }
 
 export interface ModState {
@@ -95,6 +98,8 @@ export interface ImportInput {
   platformVersionId?: string
   modNumber?: string
   archiveFileName?: string
+  // ponytail: 版本号, 用于版本分层目录 mods/<game>/<modNumber>/<versionString>/
+  versionString?: string
 }
 
 export interface InstallInput {
@@ -109,6 +114,12 @@ export interface UninstallInput {
   gameName: string
   modId: string
   gamePath: string
+}
+
+export interface DeleteInput {
+  gameId: string
+  gameName: string
+  modId: string
 }
 
 export interface ListInput {

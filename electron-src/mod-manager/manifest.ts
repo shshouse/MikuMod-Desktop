@@ -1,11 +1,22 @@
 import path from 'path'
 import fsPromises from 'fs/promises'
 import { listFilesRecursive, toRelativePosix, hashFile } from './utils'
+import { MANIFEST_BUILD_EXCLUDE_FILES, MANIFEST_BUILD_EXCLUDE_FILE_PREFIXES, MANIFEST_BUILD_EXCLUDE_DIRS } from './constants'
 import type { ModRecord, ModState, Manifest, ManifestIndex, ManifestFile } from './types'
 
+// ponytail: 排除管理文件 (original.* 压缩包备份 / manifest.json 状态文件 / _system 保留目录)
+// 升级路径: 若以后 mod 自带 _mikumodinfo.json 等元数据, 也在此排除
+function shouldExcludeForManifest(name: string, isDir: boolean): boolean {
+  const lower = name.toLowerCase()
+  if (isDir) return MANIFEST_BUILD_EXCLUDE_DIRS.has(lower)
+  if (MANIFEST_BUILD_EXCLUDE_FILES.has(lower)) return true
+  return MANIFEST_BUILD_EXCLUDE_FILE_PREFIXES.some(p => lower.startsWith(p))
+}
+
 export async function buildManifest(modRecord: ModRecord): Promise<Manifest> {
+  // ponytail: 内容统一在 libraryPath/source/ 下, 根目录存压缩包和 manifest.json
   const sourceDir = path.join(modRecord.libraryPath, 'source')
-  const filePaths = await listFilesRecursive(sourceDir)
+  const filePaths = await listFilesRecursive(sourceDir, sourceDir, [], shouldExcludeForManifest)
   const files: ManifestFile[] = []
   const seen = new Set<string>()
 

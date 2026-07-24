@@ -120,12 +120,20 @@ export async function copyDirectoryContents(srcDir: string, destDir: string) {
   }
 }
 
-export async function listFilesRecursive(rootDir: string, currentDir = rootDir, files: string[] = []) {
+export type ListFilesFilter = (name: string, isDir: boolean) => boolean
+
+export async function listFilesRecursive(
+  rootDir: string,
+  currentDir = rootDir,
+  files: string[] = [],
+  shouldSkipEntry?: ListFilesFilter
+) {
   const entries = await fsPromises.readdir(currentDir, { withFileTypes: true })
   for (const entry of entries) {
     if (JUNK_NAMES.has(entry.name) || entry.name === '__MACOSX') continue
+    if (shouldSkipEntry?.(entry.name, entry.isDirectory())) continue
     const entryPath = path.join(currentDir, entry.name)
-    if (entry.isDirectory()) { await listFilesRecursive(rootDir, entryPath, files); continue }
+    if (entry.isDirectory()) { await listFilesRecursive(rootDir, entryPath, files, shouldSkipEntry); continue }
     if (entry.isFile()) files.push(entryPath)
   }
   return files

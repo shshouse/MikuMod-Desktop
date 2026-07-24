@@ -31,8 +31,9 @@ function getXxmiDir(app: Electron.App): string {
   return path.join(getFrameworksDir(app), XXMI_FRAMEWORK_DIR)
 }
 
+// ponytail: XXMI Launcher.exe 实际在 Resources/Bin/ 下, 不在根目录
 function getLauncherExe(app: Electron.App): string {
-  return path.join(getXxmiDir(app), XXMI_LAUNCHER_EXE)
+  return path.join(getXxmiDir(app), 'Resources', 'Bin', XXMI_LAUNCHER_EXE)
 }
 
 function getMiDir(app: Electron.App, miName: string): string {
@@ -137,15 +138,19 @@ export async function importXxmiPackage(
     const contentRoot = await resolveContentRoot(tempExtractDir)
     await copyDirectoryContents(contentRoot, tempSourceDir)
 
-    // 验证结构：必须有 XXMI Launcher.exe
-    const launcherCandidate = path.join(tempSourceDir, XXMI_LAUNCHER_EXE)
-    if (!(await pathExists(launcherCandidate))) {
+    // ponytail: 校验 XXMI 便携包结构 - exe 在 Resources/Bin/ 下不在根目录,
+    // 改用 XXMI Launcher Config.json 或任一 MI 目录 (EFMI/GIMI 等) 作为合法标识
+    const hasConfig = await pathExists(path.join(tempSourceDir, 'XXMI Launcher Config.json'))
+    const hasMiDir = await Promise.all(
+      XXMI_MI_RUNTIME_NAMES.map(mi => pathExists(path.join(tempSourceDir, mi)))
+    )
+    if (!hasConfig && !hasMiDir.some(Boolean)) {
       return {
         success: false,
         launcherPath: null,
         version: null,
         importedMiNames: [],
-        error: `压缩包中未找到 ${XXMI_LAUNCHER_EXE}，请确认这是 XXMI 便携包`,
+        error: `压缩包中未找到 XXMI 便携包标识 (XXMI Launcher Config.json 或 MI 目录), 请确认这是 XXMI 便携包`,
       }
     }
 
@@ -241,6 +246,24 @@ export async function bindGameToMi(
     bindings.push(binding)
   }
   await saveBindings(app, bindings)
+  // 同步到 XXMI Launcher Config.json, 让 XXMI GUI 也能识别已绑定的游戏
+  await syncGameFolderToXxmiConfig(app, miName, gameRootDir)
+}
+
+// ponytail: 把 MikuMod 绑定的游戏路径写入 XXMI Launcher Config.json
+// 覆盖范围: 仅 game_folder 字段, 不动其他配置
+async function syncGameFolderToXxmiConfig(app: Electron.App, miName: XxmiRuntimeName, gameRootDir: string): Promise<void> {
+  const configPath = path.join(getXxmiDir(app), 'XXMI Launcher Config.json')
+  if (!(await pathExists(configPath))) return
+  try {
+    const raw = await fsPromises.readFile(configPath, 'utf-8')
+    const config = JSON.parse(raw)
+    if (!config.Importers?.[miName]?.Importer) return
+    config.Importers[miName].Importer.game_folder = gameRootDir
+    await fsPromises.writeFile(configPath, JSON.stringify(config, null, 4), 'utf-8')
+  } catch {
+    // Config.json 解析失败不阻塞启动流程
+  }
 }
 
 export async function getGameBinding(

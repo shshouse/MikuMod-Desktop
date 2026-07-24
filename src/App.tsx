@@ -26,6 +26,7 @@ const MOD_PRESELECT_VERSION_KEY = "mikumod_mod_preselect_version"
 interface PlatformGameEntry {
   id: string
   name: string
+  images?: string[]
 }
 
 function App() {
@@ -201,6 +202,7 @@ function App() {
         <GameModManagerPage
           gameId={gameId}
           gameName={game?.name ?? gameId}
+          coverImage={(game as PlatformGameEntry | undefined)?.images?.[0]}
           localPath={localPaths[gameId]}
           onSetPath={handleSetPath}
           onNavigate={navigateTo}

@@ -1,4 +1,5 @@
 import path from 'path'
+import fs from 'fs'
 import fsPromises from 'fs/promises'
 import { SKIPPED_INSTALL_FILENAMES } from './constants'
 import {
@@ -8,9 +9,11 @@ import {
   hashFile, extractArchive, resolveContentRoot, resolveDownloadedContentRoot,
   deepClone,
 } from './utils'
-import { getGameDirs, loadState, saveState, ensureGameDirs } from './state'
+import { getGameDirs, loadState, saveState, ensureGameDirs, getAppBaseDir } from './state'
 import { buildManifest, writeManifest, getManifestIndexByModId } from './manifest'
-import type { ModRecord, ModState, ModSummary, ManifestIndex, ImportInput, InstallInput, UninstallInput, ListInput, GameDirs } from './types'
+import { resolveMiNameByGameName, getMiModsDirFromBase, getMiDirFromBase, type XxmiRuntimeName } from '../launcher/launcher-types'
+import { importXxmiPackage } from '../launcher/xxmi-launcher'
+import type { ModRecord, ModState, ModSummary, ManifestIndex, ImportInput, InstallInput, UninstallInput, DeleteInput, ListInput, GameDirs } from './types'
 
 // --- 冲突检测 ---
 
@@ -115,7 +118,8 @@ async function restoreRecordToDisk(record: any, state: ModState, cache: Map<stri
     const activeModId = record.owners[record.owners.length - 1]
     const activeMod = state.mods[activeModId]
     if (!activeMod) throw new Error(`缺少模组记录: ${activeModId}`)
-    const sourcePath = path.join(activeMod.libraryPath, ...record.relativePath.split('/'))
+    // ponytail: 内容在 libraryPath/source/
+    const sourcePath = path.join(activeMod.libraryPath, 'source', ...record.relativePath.split('/'))
     await copyFileSafe(sourcePath, targetPath)
     return
   }
@@ -136,9 +140,31 @@ function resolveImportName(input: ImportInput) {
   return ext ? baseName.slice(0, -ext.length) : baseName
 }
 
+// ponytail: 计算版本子目录名, 兜底 unknown
+function resolveVersionFolder(versionString?: string): string {
+  const v = sanitizeSegment(versionString)
+  return v && v !== 'Unknown' ? v : 'unknown'
+}
+
+// ponytail: 计算压缩包原文件名 (保留作者上传的原名, 不改成 original.zip)
+function resolveArchiveFileName(input: ImportInput): string | null {
+  // 优先 archiveFileName (下载场景, 作者上传原名)
+  if (input.archiveFileName) return sanitizeSegment(input.archiveFileName)
+  // 自定义导入: 用 sourcePath 的 basename
+  if (input.sourcePath) {
+    const base = path.basename(input.sourcePath)
+    if (base) return sanitizeSegment(base)
+  }
+  return null
+}
+
 export async function importExternalMod(app: Electron.App, input: ImportInput, modsRootDir: string, backupsRootDir?: string): Promise<ModSummary> {
-  const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
-  const state = await loadState(dirs, input.gameId, input.gameName)
+  // ponytail: mod_number=9 是 XXMI 框架包唯一标识, 不依赖 gameName
+  // API 返回 mod_number 是数字, 必须用 String() 统一类型
+  const isXxmiPackage = String(input.modNumber) === '9'
+  const effectiveGameName = isXxmiPackage ? 'XXMI' : input.gameName
+  const dirs = getGameDirs(app, effectiveGameName, modsRootDir, backupsRootDir)
+  const state = await loadState(dirs, input.gameId, effectiveGameName)
   const isArchive = input.sourceType === 'archive' || input.sourceType === 'download'
 
   if (!(await pathExists(input.sourcePath))) throw new Error('导入源不存在')
@@ -182,40 +208,84 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
     if (existingForPlatform) {
       modRecord = existingForPlatform
       modDir = existingForPlatform.libraryPath
-      sourceDir = modDir
+      // ponytail: 内容统一放 source/, 清理旧的 source/ 和根目录散落文件
+      sourceDir = path.join(modDir, 'source')
       await removePath(sourceDir)
+      await removeFileIfExists(path.join(modDir, 'manifest.json')).catch(() => {})
+      // 清理旧的原压缩包 (原名或 original.* 都清)
       const entries = await fsPromises.readdir(modDir, { withFileTypes: true }).catch(() => [])
       for (const entry of entries) {
-        if (entry.isFile() && entry.name.startsWith('original.')) {
+        if (entry.isFile() && (entry.name.startsWith('original.') || entry.name === 'manifest.json')) {
           await removeFileIfExists(path.join(modDir, entry.name))
         }
       }
     } else {
-      // 平台模组：固定目录为 mods/<modNumber>
-  // 用户导入：由上层传入 gameName='USER' 并在 getGameDirs 中落到 mods/user
-  const hasFixedPlatformFolder = input.sourceType === 'download' && input.modNumber && input.gameName !== 'USER'
-      const preferredName = hasFixedPlatformFolder ? String(input.modNumber) : resolveImportName(input)
-      const folderName = hasFixedPlatformFolder ? sanitizeSegment(preferredName) : await ensureUniqueFolder(dirs.gameDir, preferredName)
-      modDir = path.join(dirs.gameDir, folderName)
-      sourceDir = modDir
-      await ensureDir(modDir)
-      await removePath(sourceDir)
-      modRecord = {
-        id: createId('mod'),
-        name: resolveImportName(input),
-        gameId: input.gameId,
-        gameName: input.gameName,
-        sourceType: input.sourceType,
-        importedAt: new Date().toISOString(),
-        installed: false,
-        installedAt: null,
-        fileCount: 0,
-        libraryPath: modDir,
-        folderName,
-        platformModId: input.platformModId || null,
-        platformVersionId: input.platformVersionId || null,
-        modNumber: input.modNumber || null,
-        lastGamePath: null,
+      // ponytail: XXMI 框架包走简化路径 - 直接 mods/XXMI/, 不做版本分层, 不保留原压缩包名
+      if (isXxmiPackage) {
+        // XXMI: modDir = mods/XXMI/, source/ 存内容, original.<ext> 存压缩包
+        modDir = dirs.gameDir
+        await ensureDir(modDir)
+        sourceDir = path.join(modDir, 'source')
+        await ensureDir(sourceDir)
+        const folderName = path.basename(modDir)
+        modRecord = {
+          id: createId('mod'),
+          name: resolveImportName(input),
+          gameId: input.gameId,
+          gameName: input.gameName,
+          sourceType: input.sourceType,
+          importedAt: new Date().toISOString(),
+          installed: false,
+          installedAt: null,
+          fileCount: 0,
+          libraryPath: modDir,
+          folderName,
+          platformModId: input.platformModId || null,
+          platformVersionId: input.platformVersionId || null,
+          modNumber: input.modNumber || null,
+          lastGamePath: null,
+          miTargetDir: null,
+        }
+      } else {
+        // ponytail: 普通平台下载目录结构 mods/<gameFolder>/<modNumber>/<versionString>/
+        // - source/ 存解压内容
+        // - <原压缩包名>.zip 存原文件 (保留原名)
+        // - manifest.json 存清单
+        const hasFixedPlatformFolder = input.sourceType === 'download' && input.modNumber && input.gameName !== 'USER'
+        if (hasFixedPlatformFolder) {
+          // 平台下载: mods/<game>/<modNumber>/<version>/
+          const versionFolder = resolveVersionFolder(input.versionString)
+          const modFolder = path.join(String(input.modNumber), versionFolder)
+          modDir = path.join(dirs.gameDir, modFolder)
+          await ensureDir(modDir)
+        } else {
+          // 自定义导入: mods/<game>/<uniqueName>/
+          const preferredName = resolveImportName(input)
+          const folderName = await ensureUniqueFolder(dirs.gameDir, preferredName)
+          modDir = path.join(dirs.gameDir, folderName)
+          await ensureDir(modDir)
+        }
+        sourceDir = path.join(modDir, 'source')
+        await ensureDir(sourceDir)
+        const folderName = path.basename(modDir)
+        modRecord = {
+          id: createId('mod'),
+          name: resolveImportName(input),
+          gameId: input.gameId,
+          gameName: input.gameName,
+          sourceType: input.sourceType,
+          importedAt: new Date().toISOString(),
+          installed: false,
+          installedAt: null,
+          fileCount: 0,
+          libraryPath: modDir,
+          folderName,
+          platformModId: input.platformModId || null,
+          platformVersionId: input.platformVersionId || null,
+          modNumber: input.modNumber || null,
+          lastGamePath: null,
+          miTargetDir: null,
+        }
       }
     }
 
@@ -228,10 +298,23 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
     }
 
     if (isArchive) {
-      const ext = path.extname(input.sourcePath) || '.zip'
-      const originalPath = path.join(modDir, `original${ext.toLowerCase()}`)
-      if (path.resolve(input.sourcePath) !== path.resolve(originalPath)) {
-        await copyFileSafe(input.sourcePath, originalPath)
+      // ponytail: XXMI 用 original.<ext>, 其他保留原作者上传的原名
+      const archiveName = isXxmiPackage
+        ? `original${(path.extname(input.sourcePath) || '.zip').toLowerCase()}`
+        : resolveArchiveFileName(input)
+      if (archiveName) {
+        const archivePath = path.join(modDir, archiveName)
+        if (path.resolve(input.sourcePath) !== path.resolve(archivePath)) {
+          await copyFileSafe(input.sourcePath, archivePath)
+        }
+        // ponytail: XXMI 框架包导入 mods/XXMI/ 后, 必须同步部署到 frameworks/xxmi/,
+        // 否则后续 MI 模组安装会报 "XXMI EFMI 未安装"
+        if (isXxmiPackage) {
+          const xxmiResult = await importXxmiPackage(app, archivePath)
+          if (!xxmiResult.success) {
+            throw new Error(`XXMI 框架部署失败: ${xxmiResult.error || '未知错误'}`)
+          }
+        }
       }
     }
 
@@ -268,6 +351,7 @@ export async function importDownloadedArchive(app: Electron.App, input: any, mod
     platformVersionId: input.platformVersionId,
     modNumber: input.modNumber,
     archiveFileName: input.archiveFileName,
+    versionString: input.versionString,
   }, modsRootDir, backupsRootDir)
 }
 
@@ -296,12 +380,90 @@ export async function listManagedMods(app: Electron.App, input: ListInput, modsR
 
 // --- 安装 ---
 
+// 二游安装策略: 复制 mod 库目录到 XXMI MI Mods 目录
+// ponytail: 不用 owners 栈/备份/冲突检测, XXMI 自己管 Mods/ 下的加载顺序
+// 同名冲突改名: <folderName> 已存在则用 <folderName>_1, _2... (用户要并存不同 mod 的场景)
+async function installToMiMods(
+  app: Electron.App,
+  modRecord: ModRecord,
+  miName: XxmiRuntimeName,
+  state: ModState,
+  dirs: GameDirs,
+): Promise<{ ok: boolean; error?: string; mod?: ModSummary }> {
+  const appBaseDir = getAppBaseDir(app)
+  const miDir = getMiDirFromBase(appBaseDir, miName)
+  // ponytail: 和 getXxmiFrameworkInfo 的判断对齐: hasDll || hasCore
+  // d3d11.dll 是运行时注入 DLL, Core/<miName> 是核心代码, 两者有其一即算已安装
+  const hasDll = fs.existsSync(path.join(miDir, 'd3d11.dll'))
+  const hasCore = fs.existsSync(path.join(miDir, 'Core', miName))
+  if (!hasDll && !hasCore) {
+    return { ok: false, error: `XXMI ${miName} 未安装，请先导入 XXMI 便携包` }
+  }
+
+  const modsDir = getMiModsDirFromBase(appBaseDir, miName)
+  await ensureDir(modsDir)
+
+  // 同名改名: 若目录已被其他 mod 占用, 找一个可用的名字
+  let targetName = modRecord.folderName
+  if (await pathExists(path.join(modsDir, targetName))) {
+    let counter = 1
+    while (await pathExists(path.join(modsDir, `${modRecord.folderName}_${counter}`))) {
+      counter += 1
+    }
+    targetName = `${modRecord.folderName}_${counter}`
+  }
+  const targetDir = path.join(modsDir, targetName)
+
+  // 若同一 mod 已装过 (miTargetDir 指向旧目录), 先清理旧的
+  if (modRecord.miTargetDir && modRecord.miTargetDir !== targetDir) {
+    await removePath(modRecord.miTargetDir).catch(() => {})
+  }
+
+  // ponytail: 内容在 libraryPath/source/, 从 source/ 复制到 MI Mods
+  await copyDirectoryContents(path.join(modRecord.libraryPath, 'source'), targetDir)
+
+  modRecord.installed = true
+  modRecord.installedAt = new Date().toISOString()
+  modRecord.miTargetDir = targetDir
+  state.mods[modRecord.id] = modRecord
+  await saveState(dirs, state)
+
+  return { ok: true, mod: toSummary(modRecord, []) }
+}
+
+// 二游卸载策略: 从 MI Mods 目录删除
+async function uninstallFromMiMods(
+  modRecord: ModRecord,
+  state: ModState,
+  dirs: GameDirs,
+): Promise<{ ok: boolean; error?: string; mod?: ModSummary }> {
+  // miTargetDir 不存在 (XXMI 被删/mod 目录被手动清理) -> 当作已卸载, 清 state
+  if (modRecord.miTargetDir) {
+    await removePath(modRecord.miTargetDir).catch(() => {})
+  }
+  modRecord.installed = false
+  modRecord.installedAt = null
+  modRecord.miTargetDir = null
+  state.mods[modRecord.id] = modRecord
+  await saveState(dirs, state)
+
+  return { ok: true, mod: toSummary(modRecord, []) }
+}
+
 export async function installManagedMod(app: Electron.App, input: InstallInput, modsRootDir: string, backupsRootDir?: string) {
   const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
   const state = await loadState(dirs, input.gameId, input.gameName)
   const modRecord = state.mods[input.modId]
 
   if (!modRecord) return { ok: false, error: '模组不存在', conflicts: [], installedPaths: 0 }
+
+  // 分流: 二游走 MI Mods 策略, 其他走 overlay 覆盖策略
+  const miName = resolveMiNameByGameName(input.gameName)
+  if (miName) {
+    const result = await installToMiMods(app, modRecord, miName, state, dirs)
+    if (!result.ok) return { ok: false, error: result.error, conflicts: [], installedPaths: 0 }
+    return { ok: true, conflicts: [], installedPaths: 1, mod: result.mod }
+  }
 
   assertManagedGamePath(state, input.gamePath)
 
@@ -317,7 +479,8 @@ export async function installManagedMod(app: Electron.App, input: InstallInput, 
     if (shouldSkipInstallFile(file.relativePath)) continue
     const key = String(file.relativePath || '').toLowerCase()
     const targetPath = resolveGamePathTarget(input.gamePath, file.relativePath)
-    const sourcePath = path.join(modRecord.libraryPath, ...file.relativePath.split('/'))
+    // ponytail: 内容在 libraryPath/source/
+    const sourcePath = path.join(modRecord.libraryPath, 'source', ...file.relativePath.split('/'))
     const currentRecord = state.files[key]
       ? deepClone(state.files[key])
       : { relativePath: file.relativePath, owners: [], original: null }
@@ -374,6 +537,14 @@ export async function uninstallManagedMod(app: Electron.App, input: UninstallInp
 
   if (!modRecord) return { ok: false, error: '模组不存在', restoredPaths: 0 }
 
+  // 分流: 二游走 MI Mods 卸载, 其他走 overlay 回滚
+  const miName = resolveMiNameByGameName(input.gameName)
+  if (miName) {
+    const result = await uninstallFromMiMods(modRecord, state, dirs)
+    if (!result.ok) return { ok: false, error: result.error, restoredPaths: 0 }
+    return { ok: true, restoredPaths: 1, mod: result.mod }
+  }
+
   assertManagedGamePath(state, input.gamePath)
 
   const manifestIndex = await getManifestIndexByModId(state, input.modId, new Map())
@@ -417,4 +588,33 @@ export async function uninstallManagedMod(app: Electron.App, input: UninstallInp
 
   const finalConflicts = await computeConflictPaths(state, modRecord, cache).catch(() => [] as string[])
   return { ok: true, restoredPaths, mod: toSummary(modRecord, finalConflicts) }
+}
+
+// --- 删除 ---
+
+export async function deleteManagedMod(app: Electron.App, input: DeleteInput, modsRootDir: string, backupsRootDir?: string): Promise<{ ok: boolean; error?: string }> {
+  const dirs = getGameDirs(app, input.gameName, modsRootDir, backupsRootDir)
+  const state = await loadState(dirs, input.gameId, input.gameName)
+  const modRecord = state.mods[input.modId]
+
+  if (!modRecord) return { ok: false, error: '模组不存在' }
+  if (modRecord.installed) return { ok: false, error: '请先卸载后再删除' }
+
+  // ponytail: 清理 state.files 中该模组的所有权记录, 避免留下孤儿引用
+  for (const key of Object.keys(state.files)) {
+    const record = state.files[key]
+    if (record && Array.isArray(record.owners)) {
+      record.owners = record.owners.filter(id => id !== input.modId)
+      if (record.owners.length === 0) delete state.files[key]
+    }
+  }
+
+  // 删除模组库目录
+  await removePath(modRecord.libraryPath)
+
+  // 删除记录
+  delete state.mods[input.modId]
+  await saveState(dirs, state)
+
+  return { ok: true }
 }

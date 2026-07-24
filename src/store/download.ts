@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react"
-import type { DownloadResumeData } from "@/types/electron"
+import type { DownloadResumeData, MultiDownloadSegment } from "@/types/electron"
 import { getDesktopSettings, persistKey } from "@/lib/desktop-config"
 import { importDownloadedMod, installManagedMod, listManagedMods, uninstallManagedMod } from "@/lib/mod-manager"
 import { logger } from "@/lib/logger"
@@ -35,6 +35,8 @@ export interface DownloadTask {
   installing?: boolean
   resumeData?: DownloadResumeData
   manuallyPaused?: boolean
+  // ponytail: 版本号, 用于版本分层目录
+  versionString?: string
 }
 
 const TASKS_STORAGE_KEY = "mikumod_desktop_download_tasks"
@@ -90,24 +92,35 @@ function normalizeResumeData(value: unknown): DownloadResumeData | undefined {
   }
 
   const candidate = value as Partial<DownloadResumeData>
-  if (typeof candidate.path !== "string" || !Array.isArray(candidate.urlChain) || typeof candidate.offset !== "number" || typeof candidate.length !== "number") {
+  if (
+    candidate.version !== 2 ||
+    typeof candidate.path !== "string" ||
+    typeof candidate.partPath !== "string" ||
+    typeof candidate.url !== "string" ||
+    typeof candidate.totalLength !== "number" ||
+    !Array.isArray(candidate.segments)
+  ) {
     return undefined
   }
 
-  const urlChain = candidate.urlChain.filter((item): item is string => typeof item === "string" && item.length > 0)
-  if (urlChain.length === 0) {
+  const segments = candidate.segments.filter(
+    (s): s is MultiDownloadSegment =>
+      !!s &&
+      typeof s.start === "number" &&
+      typeof s.end === "number" &&
+      typeof s.received === "number"
+  )
+  if (segments.length === 0) {
     return undefined
   }
 
   return {
+    version: 2,
     path: candidate.path,
-    urlChain,
-    offset: candidate.offset,
-    length: candidate.length,
-    mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : undefined,
-    lastModified: typeof candidate.lastModified === "string" ? candidate.lastModified : undefined,
-    eTag: typeof candidate.eTag === "string" ? candidate.eTag : undefined,
-    startTime: typeof candidate.startTime === "number" ? candidate.startTime : undefined,
+    partPath: candidate.partPath,
+    url: candidate.url,
+    totalLength: candidate.totalLength,
+    segments,
   }
 }
 
@@ -334,6 +347,7 @@ class DownloadStore {
       autoInstallAfterTaskIds: task.autoInstallAfterTaskIds,
       resumeData: task.resumeData,
       manuallyPaused: task.manuallyPaused,
+      versionString: task.versionString,
     }
     this.tasks.push(newTask)
     this.emit()
@@ -341,23 +355,31 @@ class DownloadStore {
     if (typeof window !== "undefined" && window.electronAPI) {
       const gameName = sanitizeSegment(task.game)
       const modFolder = resolveDownloadModFolder(task)
+      // ponytail: 版本分层 mods/<game>/<modFolder>/<versionString>/
+      const versionFolder = task.versionString ? sanitizeSegment(task.versionString) : undefined
+      const versionPath = versionFolder && versionFolder !== "Unknown" ? `${modFolder}\\${versionFolder}` : modFolder
       let saveDir: string
       const settings = getDesktopSettings()
+      const isXxmiDownload = String(task.modNumber) === "9" || task.gameId === XXMI_GAME_ID
       try {
         if (settings.downloadDirectory) {
           await window.electronAPI.authorizeDirectory(settings.downloadDirectory)
-          saveDir = `${settings.downloadDirectory}\\mods\\${gameName}\\${modFolder}`
+          saveDir = isXxmiDownload
+            ? `${settings.downloadDirectory}\\mods\\XXMI`
+            : `${settings.downloadDirectory}\\mods\\${gameName}\\${versionPath}`
         } else {
           const modsDir = await window.electronAPI.getAppModsDir()
-          if (task.gameId === XXMI_GAME_ID) {
-            // XXMI: 固定下载到应用 mods 根目录下的 XXMI
+          if (isXxmiDownload) {
+            // XXMI: 直接存 mods/XXMI/, 不做版本分层, 不保留原压缩包名
             saveDir = `${modsDir}\\XXMI`
           } else {
-            saveDir = `${modsDir}\\${gameName}\\${modFolder}`
+            saveDir = `${modsDir}\\${gameName}\\${versionPath}`
           }
         }
       } catch {
-        saveDir = `${settings.downloadDirectory || "downloads"}\\mods\\${gameName}\\${modFolder}`
+        saveDir = isXxmiDownload
+          ? `${settings.downloadDirectory || "downloads"}\\mods\\XXMI`
+          : `${settings.downloadDirectory || "downloads"}\\mods\\${gameName}\\${versionPath}`
       }
       void window.electronAPI.startDownload(task.url, task.id, task.fileName, saveDir)
     }
@@ -447,6 +469,7 @@ class DownloadStore {
         downloadId: task.id,
         fileName: task.fileName,
         archiveFileName: task.archiveFileName,
+        versionString: task.versionString,
       })
       this.updateTask(id, {
         installing: false,
@@ -514,6 +537,7 @@ class DownloadStore {
             downloadId: task.id,
             fileName: task.fileName,
             archiveFileName: task.archiveFileName,
+            versionString: task.versionString,
           })
 
       if (!shouldInstall) {
