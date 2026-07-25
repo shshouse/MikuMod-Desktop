@@ -43,8 +43,8 @@ export const IpcChannels = {
   xxmi: {
     importPackage: 'xxmi-import-package',
     getFrameworkInfo: 'xxmi-get-framework-info',
-    bindGame: 'xxmi-bind-game',
-    getBinding: 'xxmi-get-binding',
+    writeGameFolder: 'xxmi-write-game-folder',
+    getGameFolder: 'xxmi-get-game-folder',
     launchGame: 'xxmi-launch-game',
     getModsDir: 'xxmi-get-mods-dir',
     getAllModsDirs: 'xxmi-get-all-mods-dirs',

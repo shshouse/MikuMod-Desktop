@@ -220,13 +220,14 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
         }
       }
     } else {
-      // ponytail: XXMI 框架包走简化路径 - 直接 mods/XXMI/, 不做版本分层, 不保留原压缩包名
+      // ponytail: XXMI 框架包走简化路径 - 直接 mods/XXMI/, 不存 source/ (避免和 frameworks/ 重复 149MB)
+      // 只存 original.zip 供回滚/重部署, 不生成 manifest (XXMI 不走模组 manifest 系统)
       if (isXxmiPackage) {
-        // XXMI: modDir = mods/XXMI/, source/ 存内容, original.<ext> 存压缩包
         modDir = dirs.gameDir
         await ensureDir(modDir)
+        // 不创建 source/ 目录 - frameworks/xxmi/ 就是解压后的运行时, 不需要副本
         sourceDir = path.join(modDir, 'source')
-        await ensureDir(sourceDir)
+        // 仍然创建 sourceDir 以兼容后续的 rename 逻辑, 但会在之后删除
         const folderName = path.basename(modDir)
         modRecord = {
           id: createId('mod'),
@@ -314,6 +315,8 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
           if (!xxmiResult.success) {
             throw new Error(`XXMI 框架部署失败: ${xxmiResult.error || '未知错误'}`)
           }
+          // 部署成功后删除 source/ 目录 (它只是 frameworks/ 的副本, 浪费 149MB)
+          await removePath(sourceDir).catch(() => {})
         }
       }
     }
@@ -325,12 +328,22 @@ export async function importExternalMod(app: Electron.App, input: ImportInput, m
       modRecord.importedAt = new Date().toISOString()
     }
 
-    const manifest = await buildManifest(modRecord)
-    modRecord.fileCount = manifest.fileCount
-    await writeManifest(modDir, manifest)
+    // ponytail: XXMI 不需要 manifest (它不走模组哈希校验系统)
+    if (!isXxmiPackage) {
+      const manifest = await buildManifest(modRecord)
+      modRecord.fileCount = manifest.fileCount
+      await writeManifest(modDir, manifest)
+    } else {
+      modRecord.fileCount = 0
+    }
 
     state.mods[modRecord.id] = modRecord
     await saveState(dirs, state)
+
+    // ponytail: XXMI 没有 manifest, computeConflictPaths 会报 ENOENT, 跳过冲突检测
+    if (isXxmiPackage) {
+      return toSummary(modRecord, [])
+    }
 
     const cache = new Map<string, ManifestIndex>()
     const conflicts = await computeConflictPaths(state, modRecord, cache)

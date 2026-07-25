@@ -12,7 +12,7 @@ import { registerSteamIPC } from './ipc/steam'
 import { registerGameDetectIPC } from './ipc/game-detect'
 import { initAutoUpdater, registerUpdaterIPC } from './ipc/updater'
 import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod, deleteManagedMod } from './mod-manager'
-import { importXxmiPackage, getXxmiFrameworkInfo, bindGameToMi, getGameBinding, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework, createGameShortcut } from './launcher'
+import { importXxmiPackage, getXxmiFrameworkInfo, writeGameFolderToConfig, getGameFolderFromConfig, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework, createGameShortcut } from './launcher'
 import { IpcChannels } from '@shared/ipc-channels'
 
 // --- 初始化 ---
@@ -159,25 +159,25 @@ function registerXxmiIPC() {
     }
   })
 
-  ipcMain.handle(IpcChannels.xxmi.bindGame, async (_e, gameName: string, miName: string, gameExePath: string) => {
+  ipcMain.handle(IpcChannels.xxmi.writeGameFolder, async (_e, gameName: string, gameFolderPath: string) => {
     try {
-      return await bindGameToMi(app, gameName, miName as any, gameExePath)
+      return await writeGameFolderToConfig(app, gameName, gameFolderPath)
     } catch (error: any) {
-      console.error('xxmi-bind-game error:', error)
-      throw new Error(error.message || '绑定游戏失败')
+      console.error('xxmi-write-game-folder error:', error)
+      return { success: false, error: error.message || '写入游戏路径失败' }
     }
   })
 
-  ipcMain.handle(IpcChannels.xxmi.getBinding, async (_e, gameName: string) => {
+  ipcMain.handle(IpcChannels.xxmi.getGameFolder, async (_e, gameName: string) => {
     try {
-      return await getGameBinding(app, gameName)
+      return await getGameFolderFromConfig(app, gameName)
     } catch (error: any) {
-      console.error('xxmi-get-binding error:', error)
-      throw new Error(error.message || '获取绑定失败')
+      console.error('xxmi-get-game-folder error:', error)
+      return null
     }
   })
 
-  ipcMain.handle(IpcChannels.xxmi.launchGame, async (_e, gameName: string, gameExePath: string) => {
+  ipcMain.handle(IpcChannels.xxmi.launchGame, async (_e, gameName: string, gameExePath?: string) => {
     try {
       return await launchGameWithXxmi(app, gameName, gameExePath)
     } catch (error: any) {

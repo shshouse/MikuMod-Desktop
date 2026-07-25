@@ -308,12 +308,12 @@ export function GameModManagerPage({ gameId, gameName, coverImage, localPath, on
   const handleLaunchGame = async () => {
     setBusyAction("launch")
     try {
-      const binding = await window.electronAPI?.xxmiGetBinding?.(gameName)
-      if (!binding) {
-        setNotice({ tone: "default", text: "请先在「设置 -> XXMI Launcher」绑定游戏" })
+      // localPath 就是游戏安装目录, 直接传给 XXMI Launcher
+      if (!localPath) {
+        setNotice({ tone: "default", text: "请先设置游戏目录" })
         return
       }
-      const result = await window.electronAPI?.xxmiLaunchGame?.(gameName, binding.gameExePath)
+      const result = await window.electronAPI?.xxmiLaunchGame?.(gameName, localPath)
       if (!result?.success) {
         setNotice({ tone: "error", text: result?.error || "启动失败" })
         return

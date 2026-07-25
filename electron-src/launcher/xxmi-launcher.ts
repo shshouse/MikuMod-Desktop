@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import fsPromises from 'fs/promises'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn } from 'child_process'
 import { shell } from 'electron'
 import { getAppBaseDir } from '../mod-manager/state'
 import { ensureDir, pathExists, copyFileSafe, copyDirectoryContents, removePath, extractArchive, resolveContentRoot, createId } from '../mod-manager/utils'
@@ -9,15 +9,13 @@ import {
   XXMI_LAUNCHER_EXE,
   XXMI_MI_RUNTIME_NAMES,
   XXMI_MI_GAME_MAP,
-  XXMI_GAME_RUNTIME_NAMES,
   XXMI_FRAMEWORKS_DIR,
   XXMI_FRAMEWORK_DIR,
+  resolveMiNameByGameName,
   type XxmiRuntimeName,
   type XxmiFrameworkInfo,
   type XxmiImportResult,
   type XxmiLaunchResult,
-  type XxmiMiStatus,
-  type XxmiGameBinding,
   type XxmiShortcutResult,
 } from './launcher-types'
 
@@ -31,7 +29,6 @@ function getXxmiDir(app: Electron.App): string {
   return path.join(getFrameworksDir(app), XXMI_FRAMEWORK_DIR)
 }
 
-// ponytail: XXMI Launcher.exe 实际在 Resources/Bin/ 下, 不在根目录
 function getLauncherExe(app: Electron.App): string {
   return path.join(getXxmiDir(app), 'Resources', 'Bin', XXMI_LAUNCHER_EXE)
 }
@@ -44,28 +41,135 @@ function getMiModsDir(app: Electron.App, miName: string): string {
   return path.join(getMiDir(app, miName), 'Mods')
 }
 
-// --- 绑定存储 ---
+// --- XXMI Config.json 读写 (唯一真相源) ---
 
-const BINDINGS_FILE = 'xxmi-game-bindings.json'
-
-function getBindingsPath(app: Electron.App): string {
-  return path.join(getFrameworksDir(app), BINDINGS_FILE)
+function getConfigPath(app: Electron.App): string {
+  return path.join(getXxmiDir(app), 'XXMI Launcher Config.json')
 }
 
-async function loadBindings(app: Electron.App): Promise<XxmiGameBinding[]> {
-  const filePath = getBindingsPath(app)
-  if (!(await pathExists(filePath))) return []
+async function readXxmiConfig(app: Electron.App): Promise<Record<string, any> | null> {
+  const configPath = getConfigPath(app)
+  if (!(await pathExists(configPath))) return null
   try {
-    const raw = await fsPromises.readFile(filePath, 'utf-8')
-    return JSON.parse(raw) as XxmiGameBinding[]
+    const raw = await fsPromises.readFile(configPath, 'utf-8')
+    return JSON.parse(raw)
   } catch {
-    return []
+    return null
   }
 }
 
-async function saveBindings(app: Electron.App, bindings: XxmiGameBinding[]): Promise<void> {
-  await ensureDir(getFrameworksDir(app))
-  await fsPromises.writeFile(getBindingsPath(app), JSON.stringify(bindings, null, 2), 'utf-8')
+async function writeXxmiConfig(app: Electron.App, config: Record<string, any>): Promise<void> {
+  const configPath = getConfigPath(app)
+  await fsPromises.writeFile(configPath, JSON.stringify(config, null, 4), 'utf-8')
+}
+
+// --- 游戏 exe 名称映射 (XXMI validate_game_exe_path 用这些名称匹配) ---
+
+const MI_GAME_EXE_NAMES: Record<XxmiRuntimeName, string[]> = {
+  GIMI: ['GenshinImpact.exe', 'YuanShen.exe'],
+  SRMI: ['StarRail.exe'],
+  WWMI: ['Wuthering Waves.exe'],
+  ZZMI: ['ZenlessZoneZero.exe', 'ZenlessZoneZeroBeta.exe'],
+  EFMI: ['Endfield.exe'],
+  HIMI: ['BH3.exe'],
+}
+
+// 在给定路径下查找游戏 exe, 找到返回 true
+function hasGameExe(miName: XxmiRuntimeName, dirPath: string): boolean {
+  const exeNames = MI_GAME_EXE_NAMES[miName]
+  for (const exe of exeNames) {
+    if (fs.existsSync(path.join(dirPath, exe))) return true
+  }
+  // 往子目录找一层 (如启动器目录下的 games/Arknights Endfield/)
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      for (const exe of exeNames) {
+        if (fs.existsSync(path.join(dirPath, entry.name, exe))) return true
+      }
+    }
+  } catch {}
+  return false
+}
+
+// 查找包含游戏 exe 的子目录 (如 games/Arknights Endfield/)
+function findGameExeDir(miName: XxmiRuntimeName, dirPath: string): string | null {
+  const exeNames = MI_GAME_EXE_NAMES[miName]
+  // 当前目录直接有 exe
+  for (const exe of exeNames) {
+    if (fs.existsSync(path.join(dirPath, exe))) return dirPath
+  }
+  // 往子目录找
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const subDir = path.join(dirPath, entry.name)
+      for (const exe of exeNames) {
+        if (fs.existsSync(path.join(subDir, exe))) return subDir
+      }
+      // 再往下一层
+      const subEntries = fs.readdirSync(subDir, { withFileTypes: true })
+      for (const subEntry of subEntries) {
+        if (!subEntry.isDirectory()) continue
+        const subSubDir = path.join(subDir, subEntry.name)
+        for (const exe of exeNames) {
+          if (fs.existsSync(path.join(subSubDir, exe))) return subSubDir
+        }
+      }
+    }
+  } catch {}
+  return null
+}
+
+// --- 游戏路径写入 XXMI Config (替代旧的 bindings.json) ---
+
+export async function writeGameFolderToConfig(
+  app: Electron.App,
+  gameName: string,
+  gameFolderPath: string,
+): Promise<{ success: boolean; error?: string }> {
+  const miName = resolveMiNameByGameName(gameName)
+  if (!miName) {
+    return { success: false, error: `不支持的游戏: ${gameName}` }
+  }
+
+  const config = await readXxmiConfig(app)
+  if (!config) {
+    return { success: false, error: 'XXMI Launcher Config.json 不存在或损坏，请先导入 XXMI 便携包' }
+  }
+
+  if (!config.Importers?.[miName]?.Importer) {
+    return { success: false, error: `XXMI Config 中未找到 ${miName} 配置节` }
+  }
+
+  // 验证路径: 用户给的可能是启动器目录而非游戏 exe 所在目录
+  // 如 E:/EndField/Hypergryph Launcher/ 但 exe 在 games/Arknights Endfield/
+  let resolvedPath = gameFolderPath
+  if (!hasGameExe(miName, gameFolderPath)) {
+    const found = findGameExeDir(miName, gameFolderPath)
+    if (found) {
+      resolvedPath = found
+    }
+    // 找不到也不报错, 让 XXMI 自己检测, 至少写入用户指定的路径
+  }
+
+  config.Importers[miName].Importer.game_folder = resolvedPath
+  await writeXxmiConfig(app, config)
+  return { success: true }
+}
+
+export async function getGameFolderFromConfig(
+  app: Electron.App,
+  gameName: string,
+): Promise<string | null> {
+  const miName = resolveMiNameByGameName(gameName)
+  if (!miName) return null
+  const config = await readXxmiConfig(app)
+  if (!config?.Importers?.[miName]?.Importer) return null
+  const folder = config.Importers[miName].Importer.game_folder
+  return (folder && folder.trim()) ? folder.trim() : null
 }
 
 // --- 运行时目录检测 ---
@@ -127,7 +231,6 @@ export async function importXxmiPackage(
   await ensureDir(getFrameworksDir(app))
   await ensureDir(xxmiDir)
 
-  // 解压到临时目录
   const tempRoot = path.join(xxmiDir, '.import-temp', createId('xxmi'))
   const tempExtractDir = path.join(tempRoot, 'extract')
   const tempSourceDir = path.join(tempRoot, 'source')
@@ -138,8 +241,6 @@ export async function importXxmiPackage(
     const contentRoot = await resolveContentRoot(tempExtractDir)
     await copyDirectoryContents(contentRoot, tempSourceDir)
 
-    // ponytail: 校验 XXMI 便携包结构 - exe 在 Resources/Bin/ 下不在根目录,
-    // 改用 XXMI Launcher Config.json 或任一 MI 目录 (EFMI/GIMI 等) 作为合法标识
     const hasConfig = await pathExists(path.join(tempSourceDir, 'XXMI Launcher Config.json'))
     const hasMiDir = await Promise.all(
       XXMI_MI_RUNTIME_NAMES.map(mi => pathExists(path.join(tempSourceDir, mi)))
@@ -154,7 +255,6 @@ export async function importXxmiPackage(
       }
     }
 
-    // 提取版本
     let version: string | null = null
     const configPath = path.join(tempSourceDir, 'XXMI Launcher Config.json')
     if (await pathExists(configPath)) {
@@ -164,7 +264,7 @@ export async function importXxmiPackage(
       } catch {}
     }
 
-    // 复制到目标目录（只复制顶层文件和目录，跳过 .import-temp 自身）
+    // 复制到目标目录（跳过 .import-temp 自身）
     const entries = await fsPromises.readdir(tempSourceDir, { withFileTypes: true })
     for (const entry of entries) {
       if (entry.name === '.import-temp') continue
@@ -177,7 +277,6 @@ export async function importXxmiPackage(
       }
     }
 
-    // 确认 MI 目录
     const importedMiNames = findMiRuntimeNames(xxmiDir)
 
     return {
@@ -207,7 +306,7 @@ export async function getXxmiFrameworkInfo(app: Electron.App): Promise<XxmiFrame
     }
   }
 
-  const miStatuses: XxmiMiStatus[] = XXMI_MI_RUNTIME_NAMES.map(miName => {
+  const miStatuses: XxmiFrameworkInfo['miStatuses'] = XXMI_MI_RUNTIME_NAMES.map(miName => {
     const miDir = getMiDir(app, miName)
     const modsDir = getMiModsDir(app, miName)
     const hasDll = fs.existsSync(path.join(miDir, 'd3d11.dll'))
@@ -230,72 +329,26 @@ export async function getXxmiFrameworkInfo(app: Electron.App): Promise<XxmiFrame
   }
 }
 
-export async function bindGameToMi(
-  app: Electron.App,
-  gameName: string,
-  miName: XxmiRuntimeName,
-  gameExePath: string,
-): Promise<void> {
-  const bindings = await loadBindings(app)
-  const gameRootDir = path.dirname(gameExePath)
-  const existing = bindings.findIndex(b => b.gameName === gameName)
-  const binding: XxmiGameBinding = { gameName, miName, gameExePath, gameRootDir }
-  if (existing >= 0) {
-    bindings[existing] = binding
-  } else {
-    bindings.push(binding)
-  }
-  await saveBindings(app, bindings)
-  // 同步到 XXMI Launcher Config.json, 让 XXMI GUI 也能识别已绑定的游戏
-  await syncGameFolderToXxmiConfig(app, miName, gameRootDir)
-}
-
-// ponytail: 把 MikuMod 绑定的游戏路径写入 XXMI Launcher Config.json
-// 覆盖范围: 仅 game_folder 字段, 不动其他配置
-async function syncGameFolderToXxmiConfig(app: Electron.App, miName: XxmiRuntimeName, gameRootDir: string): Promise<void> {
-  const configPath = path.join(getXxmiDir(app), 'XXMI Launcher Config.json')
-  if (!(await pathExists(configPath))) return
-  try {
-    const raw = await fsPromises.readFile(configPath, 'utf-8')
-    const config = JSON.parse(raw)
-    if (!config.Importers?.[miName]?.Importer) return
-    config.Importers[miName].Importer.game_folder = gameRootDir
-    await fsPromises.writeFile(configPath, JSON.stringify(config, null, 4), 'utf-8')
-  } catch {
-    // Config.json 解析失败不阻塞启动流程
-  }
-}
-
-export async function getGameBinding(
-  app: Electron.App,
-  gameName: string,
-): Promise<XxmiGameBinding | null> {
-  const bindings = await loadBindings(app)
-  return bindings.find(b => b.gameName === gameName) ?? null
-}
-
 export async function getMiVersionForGame(
   app: Electron.App,
   gameName: string,
 ): Promise<string | null> {
-  const binding = await getGameBinding(app, gameName)
-  if (!binding) return null
-  const miDir = getMiDir(app, binding.miName)
-  return getMiVersion(miDir)
+  const miName = resolveMiNameByGameName(gameName)
+  if (!miName) return null
+  return getMiVersion(getMiDir(app, miName))
 }
 
 export async function launchGameWithXxmi(
   app: Electron.App,
   gameName: string,
-  gameExePath: string,
+  gameExePath?: string,
 ): Promise<XxmiLaunchResult> {
   const launcherPath = getLauncherExe(app)
   if (!(await pathExists(launcherPath))) {
     return { success: false, error: `未找到 XXMI Launcher: ${launcherPath}` }
   }
 
-  const gameRootDir = path.dirname(gameExePath)
-  const miName = XXMI_GAME_RUNTIME_NAMES[gameName]
+  const miName = resolveMiNameByGameName(gameName)
   if (!miName) {
     return { success: false, error: `不支持的游戏: ${gameName}` }
   }
@@ -305,25 +358,46 @@ export async function launchGameWithXxmi(
     return { success: false, error: `XXMI ${miName} 未安装，请先导入 XXMI 便携包` }
   }
 
-  // 保存或更新绑定
-  await bindGameToMi(app, gameName, miName, gameExePath)
+  // 如果有游戏路径, 写入 XXMI Config.json 让 XXMI 自动识别
+  // gameExePath 可能是 exe 路径 (如 D:\Games\GenshinImpact.exe) 或游戏目录 (如 D:\Games\Genshin Impact)
+  if (gameExePath) {
+    const gameRootDir = path.extname(gameExePath) ? path.dirname(gameExePath) : gameExePath
+    await writeGameFolderToConfig(app, gameName, gameRootDir)
+  }
+
+  // XXMI Launcher 是 Python 编译应用, stdio: 'pipe' 会导致管道缓冲区死锁崩溃
+  // 用 detached + stdio: 'ignore' 让 XXMI 独立运行, 短暂等待后判定是否启动成功
+  const child = spawn(launcherPath, ['--nogui', '--xxmi', miName], {
+    cwd: miDir,
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  })
 
   return new Promise((resolve) => {
-    const child = spawn(launcherPath, ['--nogui', '--xxmi', miName, gameExePath], {
-      cwd: miDir,
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
+    child.on('error', (err) => {
+      resolve({ success: false, error: err.message })
     })
 
-    child.unref()
+    // 短暂等待: 如果进程创建后 3 秒内没崩溃, 认为启动成功
+    // XXMI --nogui 模式成功后会启动游戏并自行退出 (auto_close=true)
+    // 如果 3 秒内 exit 了, 要检查退出码
+    const earlyExitTimer = setTimeout(() => {
+      // 进程存活 3 秒, 认为 XXMI 已进入正常启动流程
+      child.unref()
+      resolve({ success: true })
+    }, 3000)
 
-    if (child.pid) {
-      resolve({ success: true, processId: child.pid })
-    } else {
-      child.on('error', (err) => resolve({ success: false, error: err.message }))
-      resolve({ success: false, error: '启动进程创建失败' })
-    }
+    child.on('exit', (code) => {
+      clearTimeout(earlyExitTimer)
+      // exit code 0 = XXMI 正常退出 (启动游戏后自动关闭)
+      if (code === 0) {
+        resolve({ success: true })
+      } else {
+        // XXMI 崩溃: Python 异常或其他错误
+        resolve({ success: false, error: `XXMI Launcher 启动失败 (退出码 ${code})` })
+      }
+    })
   })
 }
 
@@ -371,8 +445,6 @@ export async function getAllXxmiMiModsDirs(
 export async function uninstallXxmiFramework(app: Electron.App): Promise<void> {
   const xxmiDir = getXxmiDir(app)
   await removePath(xxmiDir)
-  const bindingsPath = getBindingsPath(app)
-  await fsPromises.unlink(bindingsPath).catch(() => {})
 }
 
 export async function createGameShortcut(
@@ -391,19 +463,22 @@ export async function createGameShortcut(
     return { success: false, shortcutPath: null, error: `${miName} 未安装` }
   }
 
-  // 桌面路径
+  // 写入游戏路径到 XXMI Config
+  const gameRootDir = path.dirname(gameExePath)
+  await writeGameFolderToConfig(app, gameName, gameRootDir)
+
   const desktopPath = app.getPath('desktop')
   const shortcutName = `${gameName} (XXMI).lnk`
   const shortcutPath = path.join(desktopPath, shortcutName)
 
-  // 启动参数
-  const args = `--nogui --xxmi ${miName} "${gameExePath}"`
+  // 快捷方式只需 --nogui --xxmi MIName, XXMI 自己从 Config 读 game_folder
+  const args = `--nogui --xxmi ${miName}`
 
   try {
     shell.writeShortcutLink(shortcutPath, {
       target: launcherPath,
       args: args,
-      workingDir: miDir,
+      cwd: miDir,
       icon: gameExePath,
       iconIndex: 0,
       description: `Launch ${gameName} with XXMI ${miName}`,

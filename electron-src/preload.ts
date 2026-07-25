@@ -98,9 +98,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // XXMI Launcher
   xxmiImportPackage: (zipPath: string) => ipcRenderer.invoke(IpcChannels.xxmi.importPackage, zipPath),
   xxmiGetFrameworkInfo: () => ipcRenderer.invoke(IpcChannels.xxmi.getFrameworkInfo),
-  xxmiBindGame: (gameName: string, miName: string, gameExePath: string) => ipcRenderer.invoke(IpcChannels.xxmi.bindGame, gameName, miName, gameExePath),
-  xxmiGetBinding: (gameName: string) => ipcRenderer.invoke(IpcChannels.xxmi.getBinding, gameName),
-  xxmiLaunchGame: (gameName: string, gameExePath: string) => ipcRenderer.invoke(IpcChannels.xxmi.launchGame, gameName, gameExePath),
+  xxmiWriteGameFolder: (gameName: string, gameFolderPath: string) => ipcRenderer.invoke(IpcChannels.xxmi.writeGameFolder, gameName, gameFolderPath),
+  xxmiGetGameFolder: (gameName: string) => ipcRenderer.invoke(IpcChannels.xxmi.getGameFolder, gameName),
+  xxmiLaunchGame: (gameName: string, gameExePath?: string) => ipcRenderer.invoke(IpcChannels.xxmi.launchGame, gameName, gameExePath),
   xxmiGetModsDir: (miName: string) => ipcRenderer.invoke(IpcChannels.xxmi.getModsDir, miName),
   xxmiGetAllModsDirs: () => ipcRenderer.invoke(IpcChannels.xxmi.getAllModsDirs),
   xxmiUninstall: () => ipcRenderer.invoke(IpcChannels.xxmi.uninstall),

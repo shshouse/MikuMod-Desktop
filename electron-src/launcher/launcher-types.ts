@@ -17,18 +17,8 @@ export const XXMI_MI_GAME_MAP: Record<XxmiRuntimeName, string> = {
   HIMI: 'Honkai Impact 3rd',
 }
 
-export const XXMI_GAME_RUNTIME_NAMES: Record<string, XxmiRuntimeName> = {
-  'Genshin Impact': 'GIMI',
-  'Honkai: Star Rail': 'SRMI',
-  'Wuthering Waves': 'WWMI',
-  'Zenless Zone Zero': 'ZZMI',
-  'Endfield': 'EFMI',
-  'Honkai Impact 3rd': 'HIMI',
-}
-
 // ponytail: 用模糊匹配做 gameName -> miName 映射
 // 平台 DB 的游戏名可能中英混用/带版本号, 精确匹配不可靠
-// 升级路径: 游戏多了可考虑用 DB 的 steam_app_id 或专门字段做精确映射
 export function resolveMiNameByGameName(gameName: string): XxmiRuntimeName | null {
   const lower = String(gameName || '').toLowerCase()
   if (!lower) return null
@@ -45,8 +35,6 @@ export const XXMI_PLATFORM_ID = 'xxmi'
 export const XXMI_FRAMEWORKS_DIR = 'frameworks'
 export const XXMI_FRAMEWORK_DIR = 'xxmi'
 
-// ponytail: 纯路径计算 (不依赖 Electron), 供 mod-manager 复用
-// 避免循环依赖: xxmi-launcher.ts -> mod-manager/state, 所以不能 import xxmi-launcher
 export function getMiModsDirFromBase(appBaseDir: string, miName: XxmiRuntimeName): string {
   return path.join(appBaseDir, XXMI_FRAMEWORKS_DIR, XXMI_FRAMEWORK_DIR, miName, 'Mods')
 }
@@ -82,25 +70,7 @@ export interface XxmiImportResult {
 
 export interface XxmiLaunchResult {
   success: boolean
-  processId?: number
   error?: string
-}
-
-export interface XxmiModInstallResult {
-  success: boolean
-  miName: XxmiRuntimeName
-  targetDir: string
-  modCount: number
-  error?: string
-}
-
-// --- 游戏路径注册 ---
-
-export interface XxmiGameBinding {
-  gameName: string
-  miName: XxmiRuntimeName
-  gameExePath: string
-  gameRootDir: string
 }
 
 export interface XxmiShortcutResult {

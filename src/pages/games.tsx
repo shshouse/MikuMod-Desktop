@@ -6,6 +6,18 @@ import type { GameSummary } from "@/lib/api"
 import { saveCustomGames, saveLocalGamePaths } from "@/lib/desktop-config"
 import type { CustomGameEntry } from "@/lib/desktop-config"
 
+// ponytail: gameName -> miName 映射, 用于检测到游戏后自动写入 XXMI Config
+function resolveMiName(gameName: string): string | null {
+  const lower = (gameName || "").toLowerCase()
+  if (lower.includes("endfield") || lower.includes("终末地")) return "EFMI"
+  if (lower.includes("genshin") || lower.includes("原神")) return "GIMI"
+  if (lower.includes("star rail") || lower.includes("星穹铁道") || lower.includes("星铁")) return "SRMI"
+  if (lower.includes("wuthering") || lower.includes("鸣潮")) return "WWMI"
+  if (lower.includes("zenless") || lower.includes("绝区零")) return "ZZMI"
+  if (lower.includes("honkai impact") || lower.includes("崩坏3") || lower.includes("崩坏3rd")) return "HIMI"
+  return null
+}
+
 interface DisplayGame extends GameSummary {
   source: "platform" | "local"
 }
@@ -91,6 +103,14 @@ export function GamesPage({
     const selectedPath = await window.electronAPI?.selectDirectory()
     if (!selectedPath) return
     persistPaths({ ...localPaths, [gameId]: selectedPath })
+    // 自动写入 XXMI Config
+    const game = games.find(g => g.id === gameId) || customGames.find(g => g.id === gameId)
+    if (game) {
+      const miName = resolveMiName(game.name)
+      if (miName) {
+        try { await window.electronAPI?.xxmiWriteGameFolder?.(game.name, selectedPath) } catch {}
+      }
+    }
   }
 
   const handleManualAdd = async () => {
@@ -149,6 +169,19 @@ export function GamesPage({
       if (matched.length > 0) {
         persistPaths(nextPaths)
         setScanResult(`已检测到 ${matched.length} 个游戏：${matched.join("、")}`)
+
+        // 自动写入 XXMI Config.json: 检测到游戏路径后同步到 XXMI 配置
+        for (const game of games) {
+          const detectedPath = nextPaths[game.id]
+          if (!detectedPath) continue
+          const miName = resolveMiName(game.name)
+          if (!miName) continue
+          try {
+            await window.electronAPI?.xxmiWriteGameFolder?.(game.name, detectedPath)
+          } catch {
+            // 写入失败不阻塞检测流程, 用户启动游戏时会再次写入
+          }
+        }
       } else {
         setScanResult("未检测到任何已安装的支持游戏")
       }

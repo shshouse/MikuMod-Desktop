@@ -20,13 +20,6 @@ type XxmiFrameworkInfo = {
   }>
 }
 
-type XxmiGameBinding = {
-  gameName: string
-  miName: string
-  gameExePath: string
-  gameRootDir: string
-}
-
 const MI_LABELS: Record<string, { label: string; game: string }> = {
   GIMI: { label: 'GIMI', game: 'Genshin Impact' },
   SRMI: { label: 'SRMI', game: 'Honkai: Star Rail' },
@@ -53,7 +46,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   // XXMI state
   const [xxmiInfo, setXxmiInfo] = useState<XxmiFrameworkInfo | null>(null)
   const [xxmiLoading, setXxmiLoading] = useState(false)
-  const [xxmiBindings, setXxmiBindings] = useState<Record<string, XxmiGameBinding>>({})
   const [xxmiUninstallConfirm, setXxmiUninstallConfirm] = useState(false)
 
   const refreshXxmiInfo = useCallback(async () => {
@@ -62,15 +54,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
     try {
       const info = await window.electronAPI.xxmiGetFrameworkInfo()
       setXxmiInfo(info)
-      // Load bindings for each game
-      const bindings: Record<string, XxmiGameBinding> = {}
-      for (const mi of info.miStatuses) {
-        if (mi.installed) {
-          const binding = await window.electronAPI.xxmiGetBinding?.(mi.gameName)
-          if (binding) bindings[mi.gameName] = binding
-        }
-      }
-      setXxmiBindings(bindings)
     } catch (e) {
       console.error('Failed to get XXMI info:', e)
     } finally {
@@ -273,7 +256,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
               <>
                 <div className="space-y-2">
                   {xxmiInfo.miStatuses.filter(mi => mi.installed).map(mi => {
-                    const binding = xxmiBindings[mi.gameName]
                     return (
                       <div key={mi.runtimeName} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50">
                         <div>
@@ -281,47 +263,48 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                           <p className="text-xs text-muted-foreground">{mi.modsCount} Mods</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {binding && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 gap-1.5 rounded-lg text-xs"
-                              onClick={async () => {
-                                const result = await window.electronAPI?.xxmiCreateShortcut?.(mi.gameName, mi.runtimeName, binding.gameExePath)
-                                if (result?.success) {
-                                  showToast({ message: `快捷方式已创建`, type: 'success' })
-                                } else {
-                                  showToast({ message: result?.error || '创建失败', type: 'error' })
-                                }
-                              }}
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              创建快捷方式
-                            </Button>
-                          )}
                           <Button
                             variant="outline"
                             size="sm"
                             className="h-7 gap-1.5 rounded-lg text-xs"
                             onClick={async () => {
-                              if (!binding) {
-                                const gameExe = await window.electronAPI?.selectModFile?.()
-                                if (!gameExe) return
-                                await window.electronAPI?.xxmiBindGame?.(mi.gameName, mi.runtimeName, gameExe)
-                                await refreshXxmiInfo()
-                                showToast({ message: '游戏已绑定', type: 'success' })
+                              // 从 XXMI Config 读取游戏路径来创建快捷方式
+                              const gameFolder = await window.electronAPI?.xxmiGetGameFolder?.(mi.gameName)
+                              if (!gameFolder) {
+                                showToast({ message: '请先在游戏管理中设置游戏路径', type: 'info' })
+                                return
+                              }
+                              const result = await window.electronAPI?.xxmiCreateShortcut?.(mi.gameName, mi.runtimeName, gameFolder)
+                              if (result?.success) {
+                                showToast({ message: `快捷方式已创建`, type: 'success' })
                               } else {
-                                const result = await window.electronAPI?.xxmiLaunchGame?.(mi.gameName, binding.gameExePath)
-                                if (result?.success) {
-                                  showToast({ message: '游戏已启动', type: 'success' })
-                                } else {
-                                  showToast({ message: result?.error || '启动失败', type: 'error' })
-                                }
+                                showToast({ message: result?.error || '创建失败', type: 'error' })
+                              }
+                            }}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            快捷方式
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1.5 rounded-lg text-xs"
+                            onClick={async () => {
+                              const gameFolder = await window.electronAPI?.xxmiGetGameFolder?.(mi.gameName)
+                              if (!gameFolder) {
+                                showToast({ message: '请先在游戏管理中设置游戏路径', type: 'info' })
+                                return
+                              }
+                              const result = await window.electronAPI?.xxmiLaunchGame?.(mi.gameName, gameFolder)
+                              if (result?.success) {
+                                showToast({ message: '游戏已启动', type: 'success' })
+                              } else {
+                                showToast({ message: result?.error || '启动失败', type: 'error' })
                               }
                             }}
                           >
                             <Play className="w-3 h-3" />
-                            {binding ? '启动' : '绑定游戏'}
+                            启动
                           </Button>
                         </div>
                       </div>

@@ -1,9 +1,8 @@
 export {
   importXxmiPackage,
   getXxmiFrameworkInfo,
-  bindGameToMi,
-  getGameBinding,
-  getMiVersionForGame,
+  writeGameFolderToConfig,
+  getGameFolderFromConfig,
   launchGameWithXxmi,
   installModToXxmiMi,
   getXxmiMiModsDir,
@@ -16,7 +15,5 @@ export type {
   XxmiFrameworkInfo,
   XxmiImportResult,
   XxmiLaunchResult,
-  XxmiMiStatus,
-  XxmiGameBinding,
   XxmiShortcutResult,
 } from './launcher-types'

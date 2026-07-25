@@ -98,9 +98,9 @@ export interface ElectronAPI {
   // XXMI Launcher
   xxmiImportPackage: (zipPath: string) => Promise<{ success: boolean; launcherPath: string | null; version: string | null; importedMiNames: string[]; error?: string }>
   xxmiGetFrameworkInfo: () => Promise<{ installed: boolean; version: string | null; launcherExe: string | null; frameworksDir: string; miStatuses: Array<{ runtimeName: string; gameName: string; installed: boolean; modsCount: number; modsDir: string | null }> }>
-  xxmiBindGame: (gameName: string, miName: string, gameExePath: string) => Promise<void>
-  xxmiGetBinding: (gameName: string) => Promise<{ gameName: string; miName: string; gameExePath: string; gameRootDir: string } | null>
-  xxmiLaunchGame: (gameName: string, gameExePath: string) => Promise<{ success: boolean; processId?: number; error?: string }>
+  xxmiWriteGameFolder: (gameName: string, gameFolderPath: string) => Promise<{ success: boolean; error?: string }>
+  xxmiGetGameFolder: (gameName: string) => Promise<string | null>
+  xxmiLaunchGame: (gameName: string, gameExePath?: string) => Promise<{ success: boolean; error?: string }>
   xxmiGetModsDir: (miName: string) => Promise<string | null>
   xxmiGetAllModsDirs: () => Promise<Record<string, string | null>>
   xxmiUninstall: () => Promise<{ ok: boolean }>
