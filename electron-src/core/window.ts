@@ -37,11 +37,9 @@ function attachWindowDiagnostics(win: BrowserWindow) {
   win.webContents.on('render-process-gone', (_event, details) => {
     writeMainLog(`[Window] render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
   })
-  win.webContents.on('console-message', (_event, levelOrDetails, message, line, sourceId) => {
-    const details = typeof levelOrDetails === 'object'
-      ? levelOrDetails as any
-      : { level: levelOrDetails, message, line, sourceId }
-    writeMainLog(`[Renderer] level=${details.level} ${details.sourceId || ''}:${details.line || 0} ${details.message || ''}`)
+  win.webContents.on('console-message', (event) => {
+    const { level, message, lineNumber, sourceId } = event
+    writeMainLog(`[Renderer] level=${level} ${sourceId || ''}:${lineNumber || 0} ${message || ''}`)
   })
 }
 
