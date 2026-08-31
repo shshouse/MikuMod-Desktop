@@ -1,6 +1,5 @@
 import path from 'path'
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { loadEnvFiles } from './env-loader'
 import { initializeDesktopPaths, getDesktopPaths } from './core/paths'
 import { loadAuthorizedBaseDirs, isPathAllowed, isAllowedHttpDomain } from './core/security'
 import { getRequestIdFromHeaders, newRequestId, writeStructuredLog } from './core/logger'
@@ -17,7 +16,6 @@ import { IpcChannels } from '@shared/ipc-channels'
 
 // --- 初始化 ---
 
-loadEnvFiles({ app })
 const desktopPaths = initializeDesktopPaths()
 loadAuthorizedBaseDirs()
 

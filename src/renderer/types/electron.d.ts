@@ -17,7 +17,7 @@ import type {
   UpdaterInfo,
   UpdaterProgress,
   UpdateChannel,
-} from '../../electron-src/shared/electron-api'
+} from '@shared/electron-api'
 
 export type {
   DownloadResumeData,

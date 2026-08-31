@@ -51,11 +51,11 @@ export function createMainWindow() {
     minHeight: 700,
     frame: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
-    icon: path.join(__dirname, '../public/favicon.ico'),
+    icon: path.join(__dirname, '../../public/favicon.ico'),
     backgroundColor: '#09090b',
     show: false,
   })
@@ -67,7 +67,7 @@ export function createMainWindow() {
       writeMainLog(`[Window] loadURL failed: ${err?.stack || err?.message || err}`)
     })
   } else {
-    const indexPath = path.join(__dirname, '../dist/index.html')
+    const indexPath = path.join(__dirname, '../../dist/index.html')
     writeMainLog(`[Window] loading ${indexPath}`)
     mainWindow.loadFile(indexPath).catch((err) => {
       writeMainLog(`[Window] loadFile failed: ${err?.stack || err?.message || err}`)

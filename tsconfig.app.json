@@ -20,9 +20,9 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "@shared/*": ["electron-src/shared/*"]
+      "@/*": ["./src/renderer/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src", "electron-src/shared"]
+  "include": ["src/renderer", "src/shared"]
 }

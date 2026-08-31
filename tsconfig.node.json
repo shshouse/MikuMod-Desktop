@@ -22,11 +22,13 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@shared/*": ["electron-src/shared/*"]
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": [
     "electron.vite.config.ts",
-    "electron-src/**/*.ts"
+    "src/main",
+    "src/preload",
+    "src/shared"
   ]
 }

@@ -7,10 +7,10 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      outDir: 'electron',
+      outDir: resolve(__dirname, 'out/main'),
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'electron-src/main.ts'),
+          index: resolve(__dirname, 'src/main/index.ts'),
         },
         external: [
           'electron',
@@ -21,21 +21,20 @@ export default defineConfig({
     },
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'electron-src/shared'),
+        '@shared': resolve(__dirname, 'src/shared'),
       },
     },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      outDir: 'electron',
-      emptyOutDir: false,
+      outDir: resolve(__dirname, 'out/preload'),
       rollupOptions: {
         output: {
           format: 'cjs',
         },
         input: {
-          preload: resolve(__dirname, 'electron-src/preload.ts'),
+          index: resolve(__dirname, 'src/preload/index.ts'),
         },
         external: [
           'electron',
@@ -44,25 +43,27 @@ export default defineConfig({
     },
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'electron-src/shared'),
+        '@shared': resolve(__dirname, 'src/shared'),
       },
     },
   },
   renderer: {
     plugins: [react(), tailwindcss()],
-    root: resolve(__dirname, '.'),
+    root: resolve(__dirname, 'src/renderer'),
+    publicDir: resolve(__dirname, 'public'),
     build: {
-      outDir: 'dist',
+      outDir: resolve(__dirname, 'dist'),
+      emptyOutDir: true,
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'index.html'),
+          index: resolve(__dirname, 'src/renderer/index.html'),
         },
       },
     },
     resolve: {
       alias: {
-        '@': resolve(__dirname, 'src'),
-        '@shared': resolve(__dirname, 'electron-src/shared'),
+        '@': resolve(__dirname, 'src/renderer'),
+        '@shared': resolve(__dirname, 'src/shared'),
       },
     },
     server: {

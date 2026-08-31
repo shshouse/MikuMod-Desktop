@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "MikuMod Desktop - 模组管理与社区平台",
-  "main": "electron/index.js",
+  "main": "out/main/index.js",
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
@@ -11,7 +11,6 @@
     "preview": "electron-vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
-    "typecheck:electron": "tsc --project tsconfig.electron.json --noEmit",
     "electron:dev": "npm run dev",
     "electron:build": "npm run build && electron-builder",
     "electron:preview": "npm run preview"
@@ -56,14 +55,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "out/**/*",
       "public/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env"
-      }
     ],
     "win": {
       "target": [
