@@ -104,7 +104,7 @@ function App() {
       try {
         const parsed = new URL(url)
 
-        if (parsed.hostname === "mod") {
+        if (parsed.hostname === "mods") {
           const modNumber = parsed.pathname.replace(/^\/+/, "").split("/")[0]
           if (!modNumber) return
           const versionId = parsed.searchParams.get("version")
