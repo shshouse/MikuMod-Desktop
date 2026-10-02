@@ -112,8 +112,8 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
   }
 
   const getNotificationLink = (n: NotificationSummary): string | null => {
-    if (n.related_mod?.mod_number) return `mod:${n.related_mod.mod_number}`
-    if (n.related_post_id) return `post:${n.related_post_id}`
+    if (n.related_type === 'mod' && n.related_mod_number) return `mod:${n.related_mod_number}`
+    if (n.related_type === 'post' && n.related_id) return `post:${n.related_id}`
     return null
   }
 

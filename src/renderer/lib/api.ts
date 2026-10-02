@@ -82,8 +82,9 @@ export interface NotificationSummary {
   message?: string | null
   is_read: boolean
   created_at: string
-  related_post_id?: string | number | null
-  related_mod?: NotificationModSummary | null
+  related_id?: string | null
+  related_type?: string | null
+  related_mod_number?: number | null
 }
 
 export interface FetchNotificationsResponse {
