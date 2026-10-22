@@ -17,6 +17,7 @@ function getAppBaseDir() {
 function canWriteDirectory(dirPath: string) {
   try {
     fs.mkdirSync(dirPath, { recursive: true })
+    if (!app.isPackaged) return true
     const testPath = path.join(dirPath, `.write-test-${process.pid}`)
     fs.writeFileSync(testPath, 'ok')
     fs.unlinkSync(testPath)

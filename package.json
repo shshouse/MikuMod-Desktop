@@ -6,14 +6,16 @@
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/run-electron-vite.mjs dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
+    "preview": "node scripts/run-electron-vite.mjs preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
     "electron:dev": "npm run dev",
     "electron:build": "npm run build && electron-builder",
-    "electron:preview": "npm run preview"
+    "electron:preview": "npm run preview",
+    "dev:no-sandbox": "node scripts/run-electron-vite.mjs dev --noSandbox",
+    "dev:compat": "node scripts/run-electron-vite.mjs dev --noSandbox -- --disable-gpu"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
@@ -36,7 +38,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
-    "electron": "^41.1.0",
+    "electron": "^45.0.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.4",
