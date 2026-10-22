@@ -62,8 +62,11 @@ export function createMainWindow() {
 
   attachWindowDiagnostics(mainWindow)
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch((err) => {
+  // electron-vite 注入的是 ELECTRON_RENDERER_URL；VITE_DEV_SERVER_URL 兼容旧配置
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.VITE_DEV_SERVER_URL
+  if (devServerUrl) {
+    writeMainLog(`[Window] loading dev server ${devServerUrl}`)
+    mainWindow.loadURL(devServerUrl).catch((err) => {
       writeMainLog(`[Window] loadURL failed: ${err?.stack || err?.message || err}`)
     })
   } else {

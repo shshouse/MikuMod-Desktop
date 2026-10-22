@@ -8,3 +8,5 @@ mods
 out
 frameworks
 backups
+
+startup-debug.log

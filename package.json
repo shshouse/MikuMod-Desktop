@@ -6,16 +6,14 @@
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/run-electron-vite.mjs dev",
+    "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "preview": "node scripts/run-electron-vite.mjs preview",
+    "preview": "electron-vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
     "electron:dev": "npm run dev",
     "electron:build": "npm run build && electron-builder",
-    "electron:preview": "npm run preview",
-    "dev:no-sandbox": "node scripts/run-electron-vite.mjs dev --noSandbox",
-    "dev:compat": "node scripts/run-electron-vite.mjs dev --noSandbox -- --disable-gpu"
+    "electron:preview": "npm run preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
