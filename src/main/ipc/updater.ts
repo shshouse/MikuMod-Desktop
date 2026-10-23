@@ -1,12 +1,10 @@
 import path from 'path'
 import fs from 'fs'
 import { ipcMain, app } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { getMainWindow } from '../core/window'
 import { getDesktopPaths } from '../core/paths'
 import { IpcChannels } from '@shared/ipc-channels'
-
-let autoUpdater: any = null
-try { autoUpdater = require('electron-updater').autoUpdater } catch {}
 
 const ALLOWED_CHANNELS = new Set(['stable', 'beta', 'alpha'])
 

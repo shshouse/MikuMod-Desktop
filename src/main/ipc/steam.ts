@@ -1,11 +1,12 @@
 import path from 'path'
 import fsPromises from 'fs/promises'
-import util from 'util'
+import { exec as execCallback } from 'node:child_process'
+import { promisify } from 'node:util'
 import { ipcMain } from 'electron'
 import { authorizeBaseDir } from '../core/security'
 import { IpcChannels } from '@shared/ipc-channels'
 
-const exec = util.promisify(require('child_process').exec)
+const exec = promisify(execCallback)
 
 async function getSteamPath() {
   if (process.platform !== 'win32') return null
