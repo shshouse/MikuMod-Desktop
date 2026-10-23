@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "baseUrl": "..",
+    "paths": {
+      "@shared/*": [
+        "src/shared/*"
+      ]
+    }
+  },
+  "include": [
+    "../tests/**/*.ts",
+    "../src/main/**/*.ts",
+    "../src/shared/**/*.ts"
+  ]
+}

@@ -450,9 +450,17 @@ async function uninstallFromMiMods(
   state: ModState,
   dirs: GameDirs,
 ): Promise<{ ok: boolean; error?: string; mod?: ModSummary }> {
-  // miTargetDir 不存在 (XXMI 被删/mod 目录被手动清理) -> 当作已卸载, 清 state
+  // miTargetDir 不存在 (XXMI 被删/mod 目录被手动清理) -> removePath 的 force 会静默忽略, 视为已卸载
+  // 真正的删除失败 (EPERM/EBUSY) 必须保留 installed 状态并返回错误, 不能报告成功
   if (modRecord.miTargetDir) {
-    await removePath(modRecord.miTargetDir).catch(() => {})
+    try {
+      await removePath(modRecord.miTargetDir)
+    } catch (error: any) {
+      return {
+        ok: false,
+        error: `删除 MI 目录失败，模组仍标记为已安装：${error?.message ?? '未知错误'}`,
+      }
+    }
   }
   modRecord.installed = false
   modRecord.installedAt = null

@@ -13,16 +13,6 @@ import { initAutoUpdater, registerUpdaterIPC } from './ipc/updater'
 import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod, deleteManagedMod } from './mod-manager'
 import { importXxmiPackage, getXxmiFrameworkInfo, writeGameFolderToConfig, getGameFolderFromConfig, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework, createGameShortcut } from './launcher'
 import { IpcChannels } from '@shared/ipc-channels'
-import fs from 'fs'
-// === STARTUP_DEBUG ===
-const _dbgFile = path.join(process.cwd(), 'startup-debug.log')
-const _dbg = (m: string) => {
-  try { fs.appendFileSync(_dbgFile, '[' + new Date().toISOString() + '] ' + m + '\n') } catch {}
-}
-process.on('uncaughtException', (e: any) => _dbg('uncaught: ' + (e && e.stack ? e.stack : String(e))))
-process.on('unhandledRejection', (e: any) => _dbg('unhandledRejection: ' + (e && e.stack ? e.stack : String(e))))
-_dbg('module loaded | argv=' + process.argv.join(' '))
-// === /STARTUP_DEBUG ===
 
 // --- 初始化 ---
 
@@ -32,8 +22,7 @@ loadAuthorizedBaseDirs()
 // --- 单实例 ---
 
 const gotLock = app.requestSingleInstanceLock()
-_dbg('singleInstanceLock=' + gotLock)
-if (!gotLock) { _dbg('lock=false -> app.quit()'); app.quit() }
+if (!gotLock) app.quit()
 
 // --- 窗口控制 IPC ---
 
@@ -244,7 +233,6 @@ function registerLoginIPC() {
 // --- 启动 ---
 
 app.whenReady().then(() => {
-  _dbg('whenReady fired')
   try { registerAcceleratorIPC() } catch (err) { console.error('accelerator fallback:', err) }
   initAutoUpdater()
   registerWindowControlIPC()
@@ -259,7 +247,6 @@ app.whenReady().then(() => {
   registerXxmiIPC()
 
   const win = createMainWindow()
-  _dbg('createMainWindow -> ' + (win ? 'ok' : 'null'))
 
   const deepLinkArg = process.argv.find(arg => arg.startsWith('mikumod://'))
   if (deepLinkArg && win) {
@@ -302,7 +289,6 @@ app.on('second-instance', (_event, argv) => {
 })
 
 app.on('window-all-closed', async () => {
-  _dbg('window-all-closed')
   try { await cleanupOnExit() } catch {}
   if (process.platform !== 'darwin') app.quit()
 })
