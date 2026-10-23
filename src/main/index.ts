@@ -10,7 +10,7 @@ import { registerDownloadIPC } from './ipc/download'
 import { registerSteamIPC } from './ipc/steam'
 import { registerGameDetectIPC } from './ipc/game-detect'
 import { initAutoUpdater, registerUpdaterIPC } from './ipc/updater'
-import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod, deleteManagedMod } from './mod-manager'
+import { listManagedMods, importExternalMod, importDownloadedArchive, installManagedMod, uninstallManagedMod, deleteManagedMod, getGameDirs, resetCorruptedState } from './mod-manager'
 import { importXxmiPackage, getXxmiFrameworkInfo, writeGameFolderToConfig, getGameFolderFromConfig, launchGameWithXxmi, getXxmiMiModsDir, getAllXxmiMiModsDirs, uninstallXxmiFramework, createGameShortcut } from './launcher'
 import { IpcChannels } from '@shared/ipc-channels'
 
@@ -131,6 +131,18 @@ function registerModManagerIPC() {
     } catch (error: any) {
       console.error('managed-mods-delete error:', error)
       return { ok: false, error: error.message || '删除失败' }
+    }
+  })
+
+  // 状态文件损坏时的显式重置：损坏文件改名保留，不删除
+  ipcMain.handle(IpcChannels.modManager.resetState, async (_e, input: { gameId: string; gameName: string }) => {
+    try {
+      const dirs = getGameDirs(app, input.gameName, desktopPaths.modsDir, desktopPaths.backupsDir)
+      const result = await resetCorruptedState(dirs, input.gameId, input.gameName)
+      return { ok: true, moved: result.moved }
+    } catch (error: any) {
+      console.error('managed-mods-reset-state error:', error)
+      return { ok: false, error: error.message || '重置状态失败' }
     }
   })
 }

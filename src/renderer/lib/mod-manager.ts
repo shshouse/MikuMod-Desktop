@@ -108,3 +108,14 @@ export async function uninstallManagedMod(input: UninstallManagedModInput) {
 export async function deleteManagedMod(input: DeleteManagedModInput) {
   return window.electronAPI.deleteManagedMod(input)
 }
+
+export interface ResetManagedModStateResult {
+  ok: boolean
+  moved?: string[]
+  error?: string
+}
+
+/** 状态文件损坏时使用：把损坏文件改名保留，再创建空状态 */
+export async function resetManagedModState(gameId: string, gameName: string): Promise<ResetManagedModStateResult> {
+  return window.electronAPI.resetManagedModState({ gameId, gameName })
+}

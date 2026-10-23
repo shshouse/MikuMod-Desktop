@@ -82,6 +82,7 @@ export interface ElectronAPI {
   installManagedMod: (input: InstallManagedModInput) => Promise<InstallManagedModResult>
   uninstallManagedMod: (input: UninstallManagedModInput) => Promise<UninstallManagedModResult>
   deleteManagedMod: (input: DeleteManagedModInput) => Promise<DeleteManagedModResult>
+  resetManagedModState: (input: { gameId: string; gameName: string }) => Promise<{ ok: boolean; moved?: string[]; error?: string }>
 
   acceleratorStatus: () => Promise<{ running: boolean; resolved: Record<string, string>; activeDomains?: string[]; mode?: AcceleratorProxyMode; pacUrl?: string | null }>
   acceleratorSetDomains: (domains: unknown[]) => Promise<{ success: boolean }>

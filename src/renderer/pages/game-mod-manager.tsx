@@ -2,7 +2,7 @@ import { AlertTriangle, Archive, CheckCircle2, ExternalLink, FolderDown, FolderO
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { fetchMods } from "@/lib/api"
-import { importExternalMod, installManagedMod, listManagedMods, uninstallManagedMod, deleteManagedMod } from "@/lib/mod-manager"
+import { importExternalMod, installManagedMod, listManagedMods, uninstallManagedMod, deleteManagedMod, resetManagedModState } from "@/lib/mod-manager"
 import type { ManagedModSummary } from "@/lib/mod-manager"
 import { queueOneClickInstallByModNumber, showOneClickInstallError } from "@/lib/mod-install"
 import { showConfirm } from "@/lib/confirm"
@@ -61,6 +61,7 @@ export function GameModManagerPage({ gameId, gameName, coverImage, localPath, on
   const [managedMods, setManagedMods] = useState<ManagedModSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isManagedLoading, setIsManagedLoading] = useState(true)
+  const [managedStateCorrupted, setManagedStateCorrupted] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: NoticeTone; text: string } | null>(null)
   const downloadTasks = useDownloadStore.useStore()
@@ -70,14 +71,35 @@ export function GameModManagerPage({ gameId, gameName, coverImage, localPath, on
     try {
       const items = await listManagedMods(gameId, gameName)
       setManagedMods(items)
+      setManagedStateCorrupted(false)
     } catch (error) {
       console.error("Failed to load managed mods:", error)
       setManagedMods([])
-      setNotice({ tone: "error", text: getErrorMessage(error, "加载本地模组失败") })
+      const message = getErrorMessage(error, "加载本地模组失败")
+      setManagedStateCorrupted(message.includes("状态文件损坏"))
+      setNotice({ tone: "error", text: message })
     } finally {
       setIsManagedLoading(false)
     }
   }, [gameId, gameName])
+
+  const resetManagedState = useCallback(async () => {
+    const confirmed = await showConfirm({
+      title: "重置模组状态",
+      message:
+        "当前状态文件已损坏。重置会把损坏文件改名保留（不会删除），再创建一个空的状态记录。\n重置后，记录已丢失的已安装模组将无法通过本工具卸载，需要手动处理游戏目录。",
+      confirmText: "重置状态",
+      cancelText: "取消",
+    })
+    if (!confirmed) return
+    const result = await resetManagedModState(gameId, gameName)
+    if (!result.ok) {
+      setNotice({ tone: "error", text: result.error || "重置状态失败" })
+      return
+    }
+    setNotice({ tone: "success", text: "状态已重置，损坏文件已保留" })
+    await loadManagedMods()
+  }, [gameId, gameName, loadManagedMods])
 
   useEffect(() => {
     let isActive = true
@@ -390,6 +412,17 @@ export function GameModManagerPage({ gameId, gameName, coverImage, localPath, on
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {managedStateCorrupted && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 rounded-lg border-destructive/40 text-destructive"
+                onClick={() => void resetManagedState()}
+                disabled={isManagedLoading}
+              >
+                重置状态
+              </Button>
+            )}
             <Button size="sm" variant="outline" className="gap-1.5 rounded-lg" onClick={() => void loadManagedMods()} disabled={isManagedLoading}>
               <RefreshCw className={`w-3.5 h-3.5 ${isManagedLoading ? "animate-spin" : ""}`} />
               刷新
