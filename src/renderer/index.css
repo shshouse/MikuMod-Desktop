@@ -4,8 +4,8 @@
 
 /*
  * MikuMod Desktop 设计 token
- * 基调：纯黑画布 / 灰阶分层 / 蓝色只用于语义位置
- * 依据：docs/design-tokens.md（2026-10-22 定稿）
+ * 母版：docs/shared/tokens.css（三端共用数值，本文件是暗色剪裁版）
+ * 基调：近黑画布 / 灰阶分层 / 蓝色只用于链接、焦点、选中
  *
  * 注意：本应用为暗色单主题。@theme 里直接给暗色值，不再依赖 .dark 类切换。
  * 清理遗留的 dark: 变体是后续独立任务（先 grep 再改，不要手翻）。
@@ -13,78 +13,80 @@
 
 @theme {
   /* ============ 面：靠亮度差分层，不用阴影 ============ */
-  --color-background: #000000;
-  --color-foreground: #ededed;
-  --color-card: #0a0a0a;
-  --color-card-foreground: #ededed;
-  --color-popover: #161616;
-  --color-popover-foreground: #ededed;
+  --color-background: #0a0a0b;
+  --color-foreground: #f2f2f5;
+  --color-card: #101012;
+  --color-card-foreground: #f2f2f5;
+  --color-popover: #16161a;
+  --color-popover-foreground: #f2f2f5;
 
   /* 扩展面（新页面优先用这组，语义更清楚） */
-  --color-canvas: #000000;
-  --color-surface: #0a0a0a;
-  --color-elevated: #111111;
-  --color-raised: #1a1a1a;
-  --color-overlay: #161616;
+  --color-canvas: #0a0a0b;
+  --color-surface: #101012;
+  --color-elevated: #16161a;
+  --color-raised: #1c1c21;
+  --color-overlay: #16161a;
 
   /* ============ 品牌：主按钮是白色，不是蓝色 ============ */
   --color-primary: #ededed;
-  --color-primary-foreground: #000000;
+  --color-primary-foreground: #0a0a0b;
 
   /* ============ 次级与 hover 底 ============ */
-  --color-secondary: #1a1a1a;
-  --color-secondary-foreground: #ededed;
-  --color-muted: #111111;
-  --color-muted-foreground: #a1a1a1;
-  --color-accent: #1a1a1a; /* shadcn 的 accent 是 hover 底色，不是品牌色 */
-  --color-accent-foreground: #ededed;
+  --color-secondary: #16161a;
+  --color-secondary-foreground: #f2f2f5;
+  --color-muted: #16161a;
+  --color-muted-foreground: #a1a1ab;
+  --color-subtle: #6c6c78;
+  --color-accent: #1c1c21; /* shadcn 的 accent 是 hover 底色，不是品牌色 */
+  --color-accent-foreground: #f2f2f5;
 
   /* ============ 状态色：只做圆点和文字，不做彩色药丸 ============ */
   --color-destructive: #f85149;
-  --color-destructive-foreground: #000000;
+  --color-destructive-foreground: #0a0a0b;
   --color-success: #3fb950;
   --color-warning: #d29922;
 
   /* ============ 线 ============ */
-  --color-border: #1f1f1f;
-  --color-input: #2e2e2e;
-  --color-ring: #3291ff;
+  --color-border: #24242a;
+  --color-input: #32323a;
+  --color-border-hover: #43434d;
+  --color-ring: #7aaaff;
 
   /* ============ 侧栏 ============ */
-  --color-sidebar: #0a0a0a;
-  --color-sidebar-foreground: #a1a1a1;
-  --color-sidebar-border: #1f1f1f;
-  --color-sidebar-accent: #1a1a1a;
-  --color-sidebar-accent-foreground: #ededed;
-  --color-sidebar-ring: #3291ff;
+  --color-sidebar: #101012;
+  --color-sidebar-foreground: #a1a1ab;
+  --color-sidebar-border: #24242a;
+  --color-sidebar-accent: #1c1c21;
+  --color-sidebar-accent-foreground: #f2f2f5;
+  --color-sidebar-ring: #7aaaff;
 
   /* ============ 语义蓝：链接 / 焦点 / 勾选 / 深蓝选中行 ============ */
-  --color-brand: #3291ff;
-  --color-brand-soft: #0f2f57;
+  --color-brand: #7aaaff;
+  --color-brand-soft: #12243d;
   --color-brand-line: #1e4976;
 
   /* ============ 文字扩展 ============ */
-  --color-text: #ededed;
-  --color-subtle: #666666;
-  --color-line: #1f1f1f;
-  --color-line-strong: #2e2e2e;
-  --color-line-hover: #3a3a3a;
+  --color-text: #f2f2f5;
+  --color-line: #24242a;
+  --color-line-strong: #32323a;
+  --color-line-hover: #43434d;
 
   /* ============ 图表：降低饱和度，不抢主色 ============ */
-  --color-chart-1: #3291ff;
+  --color-chart-1: #7aaaff;
   --color-chart-2: #3fb950;
   --color-chart-3: #d29922;
   --color-chart-4: #a371f7;
   --color-chart-5: #f85149;
 
-  /* ============ 圆角：只两档（保留四个名字，值收敛） ============ */
+  /* ============ 圆角：两档 + 2xl 与 xl 同值，阻断默认 16px ============ */
   --radius-sm: 6px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 8px;
+  --radius-2xl: 8px;
 
-  /* ============ 字号：五档，含行高 ============ */
-  --text-2xs: 11px;
+  /* ============ 字号：四档，最小 12px ============ */
+  --text-2xs: 12px;
   --text-2xs--line-height: 16px;
   --text-xs: 12px;
   --text-xs--line-height: 16px;
@@ -160,11 +162,11 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
+  background: #2a2a30;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #383838;
+  background: #3a3a42;
 }
 
 /* 拖拽区 */

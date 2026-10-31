@@ -44,7 +44,7 @@ function registerWindowControlIPC() {
 // --- HTTP 代理 IPC ---
 
 function registerHttpRequestIPC() {
-  const BLOCKED_HEADERS = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-secret'])
+  const BLOCKED_HEADERS = new Set(['cookie', 'set-cookie', 'x-api-secret'])
   ipcMain.handle(IpcChannels.http.request, async (_e, url: string, options: any = {}) => {
     const requestId = getRequestIdFromHeaders(options?.headers) || newRequestId()
     try {
