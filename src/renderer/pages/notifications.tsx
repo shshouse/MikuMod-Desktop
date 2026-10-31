@@ -177,7 +177,7 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       {typeLabels[n.type] || n.type}
                     </span>
                     {!n.is_read && (
@@ -186,12 +186,12 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
                   </div>
                   <p className="text-sm text-foreground/90 mt-0.5">{n.message || n.title}</p>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(n.created_at), { locale: zhCN, addSuffix: true })}
                     </span>
                     {link && (
                       <button
-                        className="text-[10px] text-blue-400 hover:underline"
+                        className="text-xs text-blue-400 hover:underline"
                         onClick={() => {
                           if (!n.is_read) handleReadOne(n.id)
                           onNavigate(link)
@@ -202,7 +202,7 @@ export function NotificationsPage({ onNavigate }: NotificationsPageProps) {
                     )}
                     {!n.is_read && (
                       <button
-                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                        className="text-xs text-muted-foreground hover:text-foreground"
                         onClick={() => handleReadOne(n.id)}
                       >
                         标为已读

@@ -149,7 +149,7 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
                     <h4 className="text-sm font-semibold line-clamp-1 group-hover:text-blue-400 transition-colors">
                       {mod.title}
                     </h4>
-                    <p className="text-[10px] text-muted-foreground mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {mod.game?.name || ""} · {new Date(mod.created_at).toLocaleDateString()}
                     </p>
                   </div>
@@ -175,14 +175,14 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={cn(
-                      "text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0",
+                      "text-xs font-medium px-1.5 py-0.5 rounded shrink-0",
                       "bg-blue-500/10 text-blue-400"
                     )}>
                       {post.category}
                     </span>
                     <span className="text-sm truncate">{post.title}</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground shrink-0 ml-2 flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground shrink-0 ml-2 flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
                     {new Date(post.created_at).toLocaleDateString()}
                   </span>
@@ -210,7 +210,7 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
                     <span className="text-xs text-muted-foreground">{review.mod?.title}</span>
                   </div>
                   <p className="text-sm text-foreground/80 line-clamp-2">{review.content}</p>
-                  <p className="text-[10px] text-muted-foreground mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     {formatDistanceToNow(new Date(review.created_at), { locale: zhCN, addSuffix: true })}
                   </p>
                 </button>

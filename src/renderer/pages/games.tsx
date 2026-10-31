@@ -267,7 +267,7 @@ export function GamesPage({
                           <h3 className="text-sm font-semibold text-foreground/90 group-hover:text-blue-400 transition-colors line-clamp-1">
                             {game.name}
                           </h3>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {game.source === "local" ? "本地手动添加" : "平台支持游戏"}
                           </p>
                         </div>
@@ -294,13 +294,13 @@ export function GamesPage({
                       </div>
 
                       <div className="mt-auto pt-3 flex items-center justify-between">
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground">
                           模组 {game.mod_count || 0}
                         </span>
                         <Button
                           size="sm"
                           variant={localPath ? "outline" : "secondary"}
-                          className="h-7 text-[11px] px-3 rounded-lg"
+                          className="h-7 text-xs px-3 rounded-lg"
                           onClick={() => void (localPath ? openGameFolder(game.id) : handleSetPath(game.id))}
                         >
                           {localPath ? "打开目录" : "设置路径"}

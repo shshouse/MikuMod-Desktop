@@ -341,7 +341,7 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
                               v{version.version}
                             </span>
                             {idx === 0 && (
-                              <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded-full">
+                              <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-xs rounded-full">
                                 最新
                               </span>
                             )}
@@ -493,7 +493,7 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
               className="inline-flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg text-xs text-foreground hover:text-blue-400 transition-colors"
               onClick={() => mod.game?.game_number && onNavigate(`game:${mod.game.game_number}`)}
             >
-              <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
+              <span className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
                 {mod.game?.name || "未知游戏"}
               </span>
             </button>
@@ -505,21 +505,21 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
                   <Download className="w-4 h-4 text-blue-400" />
                   {formatNumber(mod.download_count)}
                 </div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">下载</div>
+                <div className="text-xs text-muted-foreground mt-0.5">下载</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center gap-1 text-base font-bold text-foreground">
                   <Eye className="w-4 h-4 text-blue-400" />
                   {formatNumber(mod.view_count)}
                 </div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">浏览</div>
+                <div className="text-xs text-muted-foreground mt-0.5">浏览</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center gap-1 text-base font-bold text-foreground">
                   <ThumbsUp className="w-4 h-4 text-blue-400" />
                   {formatNumber(mod.like_count)}
                 </div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">点赞</div>
+                <div className="text-xs text-muted-foreground mt-0.5">点赞</div>
               </div>
             </div>
 
@@ -581,7 +581,7 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
             {/* Author */}
             {mod.author && (
               <div className="pt-4 border-t border-border">
-                <div className="text-[10px] text-muted-foreground mb-2">作者</div>
+                <div className="text-xs text-muted-foreground mb-2">作者</div>
                 <button
                   className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted transition-colors w-full text-left"
                   onClick={() => mod.author?.user_number && onNavigate(`user:${mod.author.user_number}`)}
@@ -598,7 +598,7 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
                       {mod.author.username || "匿名"}
                     </div>
                     {mod.author.bio && (
-                      <div className="text-[11px] text-muted-foreground line-clamp-1">{mod.author.bio}</div>
+                      <div className="text-xs text-muted-foreground line-clamp-1">{mod.author.bio}</div>
                     )}
                   </div>
                 </button>
@@ -608,12 +608,12 @@ export function ModDetailPage({ modNumber, localPaths, onSetPath, onNavigate, on
             {/* Tags */}
             {mod.tags && mod.tags.length > 0 && (
               <div className="pt-4 border-t border-border">
-                <div className="text-[10px] text-muted-foreground mb-2">标签</div>
+                <div className="text-xs text-muted-foreground mb-2">标签</div>
                 <div className="flex flex-wrap gap-1.5">
                   {mod.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-2 py-1 bg-muted text-muted-foreground text-[11px] rounded"
+                      className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded"
                     >
                       {tag}
                     </span>

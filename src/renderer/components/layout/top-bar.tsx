@@ -218,7 +218,7 @@ export function TopBar({
           >
             <Bell className="w-4 h-4" />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-4 h-4 rounded-full bg-red-500 text-[10px] text-white px-1 flex items-center justify-center border border-background">
+              <span className="absolute top-1 right-1 min-w-4 h-4 rounded-full bg-red-500 text-xs text-white px-1 flex items-center justify-center border border-background">
                 {Math.min(unreadCount, 99)}
               </span>
             )}

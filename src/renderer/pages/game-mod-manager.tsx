@@ -497,7 +497,7 @@ export function GameModManagerPage({ gameId, gameName, coverImage, localPath, on
                             导入于 {formatDate(mod.importedAt)}
                           </p>
                         </div>
-                        <div className={`text-[11px] px-2 py-1 rounded-full ${mod.installed ? "bg-green-500/10 text-green-400" : "bg-secondary text-secondary-foreground"}`}>
+                        <div className={`text-xs px-2 py-1 rounded-full ${mod.installed ? "bg-green-500/10 text-green-400" : "bg-secondary text-secondary-foreground"}`}>
                           {mod.installed ? "已安装" : "未安装"}
                         </div>
                       </div>
@@ -607,7 +607,7 @@ export function GameModManagerPage({ gameId, gameName, coverImage, localPath, on
                       </div>
                       <div className="flex gap-1 flex-wrap">
                         {(mod.tags || []).slice(0, 3).map((tag: string) => (
-                          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">{tag}</span>
+                          <span key={tag} className="text-xs px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">{tag}</span>
                         ))}
                       </div>
                       <div className="grid grid-cols-2 gap-2">

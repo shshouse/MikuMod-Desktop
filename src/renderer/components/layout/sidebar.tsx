@@ -60,7 +60,7 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
                 {item.label}
               </span>
               {item.id === "downloads" && downloadTaskCount > 0 ? (
-                <span className="ml-auto min-w-5 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-center text-[10px] font-semibold text-blue-400">
+                <span className="ml-auto min-w-5 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-center text-xs font-semibold text-blue-400">
                   {downloadTaskCount}
                 </span>
               ) : null}
@@ -73,7 +73,7 @@ export function Sidebar({ activeTab, onTabChange, installedGames = [] }: Sidebar
           <>
             <div className="h-px bg-sidebar-border my-2 mx-3" />
             <div className="px-3 mb-1">
-              <span className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+              <span className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider">
                 已安装游戏
               </span>
             </div>

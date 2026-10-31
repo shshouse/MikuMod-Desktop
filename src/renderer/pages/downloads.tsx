@@ -46,7 +46,7 @@ export function DownloadsPage() {
                   <div>
                     <h3 className="text-sm font-semibold text-foreground/90">{download.name}</h3>
                     <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                      <span className="bg-secondary px-1.5 py-0.5 rounded text-[10px]">{download.game}</span>
+                      <span className="bg-secondary px-1.5 py-0.5 rounded text-xs">{download.game}</span>
                       <span>大小: {download.size}</span>
                       {download.speed && <span>速度: {download.speed}</span>}
                     </p>
@@ -55,7 +55,7 @@ export function DownloadsPage() {
 
                 <div className="flex items-center gap-2">
                   <span
-                    className={`text-[11px] font-medium mr-2 px-2 py-0.5 rounded-full ${
+                    className={`text-xs font-medium mr-2 px-2 py-0.5 rounded-full ${
                       download.status === "downloading"
                         ? "bg-blue-500/10 text-blue-400"
                         : download.status === "paused"
@@ -69,7 +69,7 @@ export function DownloadsPage() {
                   </span>
 
                   {download.installing ? (
-                    <span className="text-[11px] font-medium mr-2 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
+                    <span className="text-xs font-medium mr-2 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
                       安装中
                     </span>
                   ) : null}
@@ -90,7 +90,7 @@ export function DownloadsPage() {
                       </Button>
                     ) : null}
                     {download.installed ? (
-                      <span className="text-[10px] text-green-400 font-medium px-2">已安装</span>
+                      <span className="text-xs text-green-400 font-medium px-2">已安装</span>
                     ) : null}
                     {download.status === "done" && download.savePath ? (
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => void store.openFolder(download.id)}>

@@ -129,7 +129,7 @@ export function CommunityFeed({ searchQuery, onNavigate }: CommunityFeedProps) {
 
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${categoryColors[post.category || "默认"] || "bg-muted text-muted-foreground"}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${categoryColors[post.category || "默认"] || "bg-muted text-muted-foreground"}`}>
                           {post.category || "默认"}
                         </span>
                         <button className="text-left min-w-0" onClick={() => void openPost(post.id)}>
@@ -139,7 +139,7 @@ export function CommunityFeed({ searchQuery, onNavigate }: CommunityFeedProps) {
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                         <span className="font-medium">{author?.username || "未知用户"}</span>
                         <span className="flex items-center gap-1.5 opacity-80">
                           <Clock className="w-3 h-3" />

@@ -133,7 +133,7 @@ export function ModsPage({ searchQuery, localPaths, onSetPath, onNavigate }: Mod
                 <stat.icon className="w-4 h-4 text-blue-400" />
               </div>
               <div>
-                <p className="text-[11px] text-muted-foreground">{stat.label}</p>
+                <p className="text-xs text-muted-foreground">{stat.label}</p>
                 <p className="text-base font-semibold">{stat.value}</p>
               </div>
             </div>

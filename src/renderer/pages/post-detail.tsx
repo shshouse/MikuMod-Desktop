@@ -164,11 +164,11 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
           </button>
 
           <div className="flex items-center gap-2 mb-2">
-            <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded", catClass)}>
+            <span className={cn("text-xs font-medium px-2 py-0.5 rounded", catClass)}>
               {post.category}
             </span>
             {post.game?.name && (
-              <span className="text-[10px] text-muted-foreground/60 bg-secondary px-1.5 py-0.5 rounded">
+              <span className="text-xs text-muted-foreground/60 bg-secondary px-1.5 py-0.5 rounded">
                 {post.game.name}
               </span>
             )}
@@ -292,18 +292,18 @@ export function PostDetailPage({ postId, onNavigate, onBack }: PostDetailPagePro
                   </div>
                   <span className="text-xs font-medium">{reply.user?.username || "匿名"}</span>
                 </button>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {formatDistanceToNow(new Date(reply.created_at), { locale: zhCN, addSuffix: true })}
                 </span>
               </div>
               {reply.parent_reply_id && reply.reply_to_user && (
-                <p className="text-[10px] text-muted-foreground mt-1">回复 @{reply.reply_to_user?.username}</p>
+                <p className="text-xs text-muted-foreground mt-1">回复 @{reply.reply_to_user?.username}</p>
               )}
               <p className="text-sm text-foreground/80 mt-2 whitespace-pre-wrap">{reply.content}</p>
               {currentUser && (
                 <button
                   onClick={() => setReplyTo({ id: reply.id, username: reply.user?.username || "用户" })}
-                  className="text-[10px] text-muted-foreground hover:text-foreground mt-2 transition-colors"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-2 transition-colors"
                 >
                   回复
                 </button>

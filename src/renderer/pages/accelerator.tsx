@@ -326,7 +326,7 @@ export function AcceleratorPage() {
                 }
               </p>
               {running && proxyModeLabel && (
-                <p className="mt-1 text-[10px] text-emerald-300">
+                <p className="mt-1 text-xs text-emerald-300">
                   当前模式：{proxyModeLabel}
                 </p>
               )}
@@ -446,18 +446,18 @@ export function AcceleratorPage() {
                       <div className="flex items-center gap-2 shrink-0">
                         {latencies[item.match_domain] && (
                           <div className="flex items-center gap-1.5 mr-2">
-                            <span className="text-[10px] text-red-400">
+                            <span className="text-xs text-red-400">
                               加速前 {latencies[item.match_domain]!.before === -1 ? '超时' : `${latencies[item.match_domain]!.before}ms`}
                             </span>
-                            <span className="text-[10px] text-zinc-700">→</span>
-                            <span className={`text-[11px] font-medium ${latencies[item.match_domain]!.after === -1 ? 'text-red-400'
+                            <span className="text-xs text-zinc-700">→</span>
+                            <span className={`text-xs font-medium ${latencies[item.match_domain]!.after === -1 ? 'text-red-400'
                                 : (latencies[item.match_domain]!.after! < 100 ? 'text-emerald-400' : 'text-amber-400')
                               }`}>
                               加速后 {latencies[item.match_domain]!.after === -1 ? '超时' : `${latencies[item.match_domain]!.after}ms`}
                             </span>
                           </div>
                         )}
-                        <span className="text-[11px] font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded select-all">
+                        <span className="text-xs font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded select-all">
                           {ip}
                         </span>
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -488,18 +488,18 @@ export function AcceleratorPage() {
                           <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                             {latencies[child.match_domain] && (
                               <div className="flex items-center gap-1.5 mr-2">
-                                <span className="text-[10px] text-red-400">
+                                <span className="text-xs text-red-400">
                                   加速前 {latencies[child.match_domain]!.before === -1 ? '超时' : `${latencies[child.match_domain]!.before}ms`}
                                 </span>
-                                <span className="text-[10px] text-zinc-700">→</span>
-                                <span className={`text-[11px] font-medium ${latencies[child.match_domain]!.after === -1 ? 'text-red-400'
+                                <span className="text-xs text-zinc-700">→</span>
+                                <span className={`text-xs font-medium ${latencies[child.match_domain]!.after === -1 ? 'text-red-400'
                                     : (latencies[child.match_domain]!.after! < 100 ? 'text-emerald-400' : 'text-amber-400')
                                   }`}>
                                   加速后 {latencies[child.match_domain]!.after === -1 ? '超时' : `${latencies[child.match_domain]!.after}ms`}
                                 </span>
                               </div>
                             )}
-                            <span className="text-[11px] font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded select-all">
+                            <span className="text-xs font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded select-all">
                               {childIp}
                             </span>
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
