@@ -27,13 +27,12 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": [
-        "src/renderer/*"
+        "../src/renderer/*"
       ],
       "@shared/*": [
-        "src/shared/*"
+        "../src/shared/*"
       ]
-    },
-    "baseUrl": ".."
+    }
   },
   "include": [
     "../src/renderer",

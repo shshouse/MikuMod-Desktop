@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/error"
 import {
   ArrowLeft,
   Calendar,
@@ -41,10 +42,6 @@ interface ModDetailPageProps {
 
 interface SessionUser {
   id: string
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "未知错误"
 }
 
 function formatNumber(num?: number | null): string {

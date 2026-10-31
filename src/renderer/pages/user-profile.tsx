@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/error"
 import {
   Calendar,
   FileText,
@@ -19,10 +20,6 @@ interface UserProfilePageProps {
   onNavigate: (tab: string) => void
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "加载用户资料失败"
-}
-
 export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps) {
   const [data, setData] = useState<UserProfileResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -41,7 +38,7 @@ export function UserProfilePage({ userNumber, onNavigate }: UserProfilePageProps
         if (!isActive) {
           return
         }
-        setError(getErrorMessage(err))
+        setError(getErrorMessage(err, "加载用户资料失败"))
       })
       .finally(() => {
         if (!isActive) {

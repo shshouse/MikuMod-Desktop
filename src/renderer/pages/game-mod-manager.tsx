@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/error"
 import { AlertTriangle, Archive, CheckCircle2, ExternalLink, FolderDown, FolderOpen, Gamepad2, Loader2, Package, Play, Plus, RefreshCw, Trash2, TrendingUp } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -38,10 +39,6 @@ interface PlatformLibraryMod {
 type NoticeTone = "default" | "success" | "error"
 const PLATFORM_MOD_PAGE_SIZE = 48
 const PLATFORM_MOD_MAX_PAGES = 5
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
-}
 
 function formatDate(value?: string | null) {
   if (!value) {

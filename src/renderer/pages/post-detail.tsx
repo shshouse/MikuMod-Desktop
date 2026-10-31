@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/error"
 import {
   ArrowLeft,
   Heart,
@@ -29,10 +30,6 @@ interface PostDetailPageProps {
 
 interface SessionUser {
   id: string
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "未知错误"
 }
 
 const categoryColors: Record<string, string> = {

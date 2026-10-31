@@ -27,10 +27,9 @@
     "forceConsistentCasingInFileNames": true,
     "paths": {
       "@shared/*": [
-        "src/shared/*"
+        "../src/shared/*"
       ]
-    },
-    "baseUrl": ".."
+    }
   },
   "include": [
     "../electron.vite.config.ts",
