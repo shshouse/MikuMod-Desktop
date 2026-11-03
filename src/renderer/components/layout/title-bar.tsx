@@ -8,7 +8,7 @@ export function TitleBar() {
   return (
     <div className="drag-region flex items-center justify-between h-9 bg-sidebar border-b border-sidebar-border select-none shrink-0">
       <div className="flex items-center gap-2 px-4">
-        <img src="/favicon.ico" alt="" className="w-4 h-4" />
+        <img src="/icon/favicon.ico" alt="" className="w-4 h-4" />
         <span className="text-xs font-semibold text-sidebar-foreground/70 tracking-wide">
           MIKUMOD DESKTOP
         </span>

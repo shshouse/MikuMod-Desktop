@@ -69,7 +69,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/favicon.ico",
+      "icon": "public/icon/favicon.ico",
       "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
