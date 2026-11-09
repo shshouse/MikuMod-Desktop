@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "MikuMod Desktop - 模组管理与社区平台",
+  "author": "shshouse",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
@@ -57,6 +58,7 @@
   "build": {
     "appId": "com.mikumod.desktop",
     "productName": "MikuMod",
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
     },
